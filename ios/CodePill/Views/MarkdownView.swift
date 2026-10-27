@@ -16,10 +16,18 @@ public struct MarkdownMessageView: View {
                 case .code(let lang, let code):
                     CodeBlockCard(language: lang, code: code)
                 case .text(let content):
-                    Text(LocalizedStringKey(content))
-                        .font(isUser ? .body : .body)
-                        .foregroundStyle(isUser ? .white : .primary)
-                        .textSelection(.enabled)
+                    if content.count > 4000 {
+                        // Very long text — skip LocalizedStringKey to avoid crash
+                        Text(content)
+                            .font(.body)
+                            .foregroundStyle(isUser ? .white : .primary)
+                            .textSelection(.enabled)
+                    } else {
+                        Text(LocalizedStringKey(content))
+                            .font(.body)
+                            .foregroundStyle(isUser ? .white : .primary)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         }

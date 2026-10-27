@@ -197,7 +197,7 @@ impl SessionManager {
                             .and_then(|idx| full_lines.get(&idx))
                             .and_then(|fv| fv.get("content"))
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(|s| if s.len() > 50_000 { format!("{}… [truncated]", &s[..50_000]) } else { s.to_string() })
                     } else {
                         val.get("content").and_then(|v| v.as_str()).map(|s| s.to_string())
                     };
@@ -227,7 +227,7 @@ impl SessionManager {
                             .and_then(|idx| full_lines.get(&idx))
                             .and_then(|fv| fv.get("content"))
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .map(|s| if s.len() > 50_000 { format!("{}… [truncated]", &s[..50_000]) } else { s.to_string() })
                     } else {
                         val.get("content").and_then(|v| v.as_str()).map(|s| s.to_string())
                     };
