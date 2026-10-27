@@ -8,6 +8,7 @@ public struct ContentView: View {
     @State private var showConversations: Bool = false
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showFilePicker: Bool = false
+    @State private var isAtBottom: Bool = true
 
     public init(client: CodePillClient) {
         _viewModel = StateObject(wrappedValue: ChatViewModel(client: client))
@@ -24,52 +25,106 @@ public struct ContentView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                // Chat stream
+                // Chat stream with smart auto-scroll & floating bottom button
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(viewModel.messages) { msg in
-                                MessageRow(
-                                    message: msg,
-                                    onRollback: {
-                                        viewModel.rollbackTurn()
-                                    },
-                                    onEdit: { prompt in
-                                        viewModel.inputText = prompt
-                                    }
-                                )
-                                .id(msg.id)
-                                .transition(.asymmetric(
-                                    insertion: .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity),
-                                    removal: .opacity
-                                ))
-                            }
+                    ZStack(alignment: .bottomTrailing) {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                ForEach(viewModel.messages) { msg in
+                                    MessageRow(
+                                        message: msg,
+                                        onRollback: {
+                                            viewModel.rollbackTurn()
+                                        },
+                                        onEdit: { prompt in
+                                            viewModel.inputText = prompt
+                                        }
+                                    )
+                                    .id(msg.id)
+                                    .transition(.asymmetric(
+                                        insertion: .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
+                                }
 
-                            // Dedicated bottom scroll anchor
-                            Color.clear
-                                .frame(height: 1)
-                                .id("chatBottomAnchor")
+                                // Dedicated bottom scroll anchor & viewport detector
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id("chatBottomAnchor")
+                                    .onAppear {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            isAtBottom = true
+                                        }
+                                    }
+                                    .onDisappear {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            isAtBottom = false
+                                        }
+                                    }
+                            }
+                            .padding(.vertical, 12)
                         }
-                        .padding(.vertical, 12)
-                    }
-                    .refreshable {
-                        await viewModel.refreshCurrentSessionAsync()
-                    }
-                    .scrollDismissesKeyboard(.interactively)
-                    .onTapGesture {
-                        hideKeyboard()
-                    }
-                    .onChange(of: viewModel.messages.last?.text) { _ in
-                        proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
-                    }
-                    .onChange(of: viewModel.messages.last?.toolCalls.count) { _ in
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                        .refreshable {
+                            await viewModel.refreshCurrentSessionAsync()
                         }
-                    }
-                    .onChange(of: viewModel.messages.count) { _ in
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                        .scrollDismissesKeyboard(.interactively)
+                        .onTapGesture {
+                            hideKeyboard()
+                        }
+                        .onChange(of: viewModel.messages.last?.text) { _ in
+                            if isAtBottom {
+                                proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                            }
+                        }
+                        .onChange(of: viewModel.messages.last?.toolCalls.count) { _ in
+                            if isAtBottom {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                                }
+                            }
+                        }
+                        .onChange(of: viewModel.messages.count) { _ in
+                            if isAtBottom {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                                }
+                            }
+                        }
+
+                        // Floating "Scroll to Bottom" Button (like ChatGPT & Telegram)
+                        if !isAtBottom {
+                            Button {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                    proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                                    isAtBottom = true
+                                }
+                                Haptics.shared.impact(.light)
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(UIColor.secondarySystemBackground))
+                                        .frame(width: 38, height: 38)
+                                        .shadow(color: .black.opacity(0.32), radius: 6, x: 0, y: 3)
+                                        .overlay(
+                                            Circle()
+                                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                                        )
+
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(.primary)
+
+                                    if viewModel.isExecuting {
+                                        Circle()
+                                            .fill(Color.accentColor)
+                                            .frame(width: 8, height: 8)
+                                            .offset(x: 12, y: -12)
+                                    }
+                                }
+                            }
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 10)
+                            .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
                     }
                 }
@@ -97,15 +152,17 @@ public struct ContentView: View {
                         showConversations = true
                         Haptics.shared.selection()
                     } label: {
-                        Image(systemName: "bubble.left.and.bubble.right")
-                            .font(.system(size: 16, weight: .semibold))
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.primary)
                     }
                 }
 
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 2) {
                         Text(currentConversationTitle)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
 
                         HStack(spacing: 5) {
@@ -128,38 +185,43 @@ public struct ContentView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        // Reload/sync data button
-                        Button {
-                            viewModel.refreshCurrentSession()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 15, weight: .medium))
-                        }
-
-                        // Rollback turn button
-                        Button {
-                            viewModel.rollbackTurn()
-                        } label: {
-                            Image(systemName: "arrow.uturn.backward")
-                                .font(.system(size: 15, weight: .medium))
-                        }
-                        .disabled(viewModel.isExecuting)
-
-                        // New chat button
+                    HStack(spacing: 14) {
+                        // New Chat
                         Button {
                             viewModel.startNewChat()
+                            Haptics.shared.impact(.light)
                         } label: {
                             Image(systemName: "square.and.pencil")
                                 .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.primary)
                         }
 
-                        // Settings button
-                        Button {
-                            showSettings = true
+                        // Options Menu (Apple standard ellipsis.circle)
+                        Menu {
+                            Button {
+                                viewModel.refreshCurrentSession()
+                            } label: {
+                                Label("Reload / Sync Chat", systemImage: "arrow.clockwise")
+                            }
+
+                            Button {
+                                viewModel.rollbackTurn()
+                            } label: {
+                                Label("Undo Last Turn", systemImage: "arrow.uturn.backward")
+                            }
+                            .disabled(viewModel.isExecuting)
+
+                            Divider()
+
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Label("Settings", systemImage: "gearshape")
+                            }
                         } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 16, weight: .medium))
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
