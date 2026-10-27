@@ -44,9 +44,9 @@ private struct AttachmentItemPill: View {
             } else {
                 Image(systemName: iconName)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 28, height: 28)
-                    .background(Color.purple.opacity(0.12))
+                    .background(Color.accentColor.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
 

@@ -9,9 +9,9 @@ public struct MessageRow: View {
             if message.role == .assistant {
                 Image(systemName: "pill.fill")
                     .font(.caption2)
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(Color.accentColor)
                     .padding(6)
-                    .background(Color.purple.opacity(0.15))
+                    .background(Color.accentColor.opacity(0.15))
                     .clipShape(Circle())
             }
 
@@ -21,13 +21,14 @@ public struct MessageRow: View {
                     attachmentsView
                 }
 
-                // Tool calls
+                // Tool calls (show even if text is empty!)
                 if !message.toolCalls.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(message.toolCalls) { tool in
                             ToolCallBadge(item: tool)
                         }
                     }
+                    .padding(.vertical, 2)
                 }
 
                 // Message bubble
@@ -88,7 +89,7 @@ public struct MessageRow: View {
                     HStack(spacing: 8) {
                         Image(systemName: "doc.fill")
                             .font(.subheadline)
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(Color.accentColor)
                         Text(att.name)
                             .font(.caption.bold())
                             .lineLimit(1)
@@ -119,7 +120,7 @@ public struct MessageRow: View {
     private var bubbleBackground: some View {
         switch message.role {
         case .user:
-            Color.purple
+            Color.accentColor
         case .assistant:
             Color(UIColor.secondarySystemBackground)
         case .system:

@@ -2,6 +2,17 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+public struct HeaderScaleButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.90 : 1.0)
+            .opacity(configuration.isPressed ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 public struct ContentView: View {
     @StateObject private var viewModel: ChatViewModel
     @State private var showSettings: Bool = false
@@ -15,7 +26,7 @@ public struct ContentView: View {
 
     public var body: some View {
         ZStack {
-            // Strict Clean Dark Background
+            // Strict Clean Apple Dark Background
             Color(UIColor.systemBackground)
                 .ignoresSafeArea()
 
@@ -24,12 +35,16 @@ public struct ContentView: View {
                 strictHeaderBar
                     .padding(.horizontal, 14)
                     .padding(.top, 6)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 4)
+
+                // Main Screen Status Bar (Clean connection & execution indicator)
+                mainStatusBanner
 
                 // Dynamic Island mirror preview when busy
                 if let island = viewModel.currentIslandState {
                     LiveIslandPreview(state: island)
-                        .padding(.top, 4)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 6)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
@@ -123,27 +138,27 @@ public struct ContentView: View {
     }
 
     private var strictHeaderBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Button {
                 viewModel.client.requestConversationsList()
-                showConversations = true
+                DispatchQueue.main.async {
+                    showConversations = true
+                }
             } label: {
                 Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.subheadline)
+                    .font(.body)
                     .foregroundStyle(.primary)
+                    .frame(width: 34, height: 34)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .clipShape(Circle())
             }
+            .buttonStyle(HeaderScaleButtonStyle())
 
             Spacer()
 
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(viewModel.isConnected ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-
-                Text(viewModel.isConnected ? "CodePill (Live)" : "CodePill (Offline)")
-                    .font(.subheadline.bold().monospaced())
-                    .foregroundStyle(.primary)
-            }
+            Text("CodePill")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
 
             Spacer()
 
@@ -153,21 +168,85 @@ public struct ContentView: View {
                 Image(systemName: "arrow.uturn.backward")
                     .font(.caption.bold())
                     .foregroundColor(viewModel.isExecuting ? Color.secondary : Color.orange)
+                    .frame(width: 34, height: 34)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .clipShape(Circle())
             }
+            .buttonStyle(HeaderScaleButtonStyle())
             .disabled(viewModel.isExecuting)
 
             Button {
-                showSettings = true
+                DispatchQueue.main.async {
+                    showSettings = true
+                }
             } label: {
                 Image(systemName: "gearshape")
-                    .font(.subheadline)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, height: 34)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(HeaderScaleButtonStyle())
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var mainStatusBanner: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(statusIndicatorColor)
+                .frame(width: 8, height: 8)
+
+            Text(statusIndicatorText)
+                .font(.caption.bold().monospaced())
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            if viewModel.isExecuting {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .scaleEffect(0.65)
+                    .tint(Color.accentColor)
+            } else {
+                Text(viewModel.selectedModel.replacingOccurrences(of: "gemini-", with: ""))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color(UIColor.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.vertical, 7)
+        .background(Color(UIColor.secondarySystemBackground).opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
+    }
+
+    private var statusIndicatorColor: Color {
+        if !viewModel.isConnected {
+            return .orange
+        }
+        if viewModel.isExecuting {
+            return Color.accentColor
+        }
+        return .green
+    }
+
+    private var statusIndicatorText: String {
+        if !viewModel.isConnected {
+            return "Offline"
+        }
+        if viewModel.isExecuting {
+            if let file = viewModel.currentIslandState?.currentFile {
+                return "Running: \(file)"
+            }
+            return viewModel.currentIslandState?.status ?? "Thinking..."
+        }
+        return "Connected"
     }
 
     private var canSend: Bool {
@@ -217,7 +296,7 @@ public struct ContentView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)
-                        .foregroundColor(canSend ? Color.purple : Color.secondary.opacity(0.4))
+                        .foregroundColor(canSend ? Color.accentColor : Color.secondary.opacity(0.4))
                 }
                 .disabled(!canSend)
                 .padding(.trailing, 6)

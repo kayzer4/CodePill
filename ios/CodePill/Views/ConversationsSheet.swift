@@ -14,7 +14,7 @@ public struct ConversationsSheet: View {
                     } label: {
                         Label("New Session", systemImage: "plus.circle.fill")
                             .font(.headline)
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(Color.accentColor)
                     }
                 }
 
@@ -41,7 +41,7 @@ public struct ConversationsSheet: View {
                                     Spacer()
                                     if viewModel.currentConversationId == item.id {
                                         Image(systemName: "checkmark")
-                                            .foregroundStyle(.purple)
+                                            .foregroundStyle(Color.accentColor)
                                             .font(.caption.bold())
                                     }
                                 }

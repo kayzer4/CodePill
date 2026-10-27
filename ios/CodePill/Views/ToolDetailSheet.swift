@@ -48,7 +48,7 @@ public struct ToolDetailSheet: View {
                             } label: {
                                 Label(copied ? "Copied!" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                                     .font(.caption.bold())
-                                    .foregroundStyle(copied ? .green : .purple)
+                                    .foregroundStyle(copied ? .green : Color.accentColor)
                             }
                         }
 

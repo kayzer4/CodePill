@@ -353,13 +353,22 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
                     var tools: [ToolCallItem] = []
                     if let rawTools = m["tool_calls"] as? [[String: Any]] {
                         for t in rawTools {
+                            var paramsString: String? = nil
+                            if let params = t["parameters"] {
+                                if let data = try? JSONSerialization.data(withJSONObject: params, options: .prettyPrinted) {
+                                    paramsString = String(data: data, encoding: .utf8)
+                                }
+                            }
                             tools.append(ToolCallItem(
                                 id: t["id"] as? String ?? UUID().uuidString,
                                 name: t["name"] as? String ?? "",
                                 summary: t["summary"] as? String ?? "",
                                 output: t["output"] as? String,
+                                fullOutput: t["full_output"] as? String ?? (t["output"] as? String),
+                                parametersText: paramsString,
                                 isRunning: t["is_running"] as? Bool ?? false,
-                                isSuccess: t["is_success"] as? Bool ?? false
+                                isSuccess: t["is_success"] as? Bool ?? false,
+                                duration: t["duration_seconds"] as? Double
                             ))
                         }
                     }

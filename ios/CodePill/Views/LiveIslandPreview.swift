@@ -6,7 +6,7 @@ public struct LiveIslandPreview: View {
     public var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "pill.fill")
-                .foregroundStyle(.purple)
+                .foregroundStyle(Color.accentColor)
                 .font(.footnote)
 
             if state.isBusy {

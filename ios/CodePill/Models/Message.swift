@@ -6,7 +6,7 @@ public enum MessageRole: String, Codable {
     case system
 }
 
-public struct AttachmentItem: Identifiable, Hashable {
+public struct AttachmentItem: Identifiable, Hashable, Codable {
     public let id: String
     public let name: String
     public let mimeType: String
@@ -28,7 +28,7 @@ public struct AttachmentItem: Identifiable, Hashable {
     }
 }
 
-public struct ToolCallItem: Identifiable, Hashable {
+public struct ToolCallItem: Identifiable, Hashable, Codable {
     public let id: String
     public let name: String
     public var summary: String
@@ -62,7 +62,7 @@ public struct ToolCallItem: Identifiable, Hashable {
     }
 }
 
-public struct ChatMessage: Identifiable, Hashable {
+public struct ChatMessage: Identifiable, Hashable, Codable {
     public let id: UUID
     public let role: MessageRole
     public var text: String

@@ -22,21 +22,58 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         self.isConnected = client.isConnected
         self.client.delegate = self
 
-        startNewChat()
+        loadCache()
+        if self.currentConversationId == nil {
+            self.currentConversationId = UUID().uuidString
+        }
     }
 
     public func startNewChat() {
         self.currentConversationId = UUID().uuidString
-        self.messages = [
-            ChatMessage(
-                role: .system,
-                text: "💊 CodePill ready. Port: \(client.port). Apple Dark Mode active."
-            )
-        ]
+        self.messages = []
         self.attachments = []
         self.currentIslandState = nil
         self.isExecuting = false
+        saveCache()
         Haptics.shared.impact(.light)
+    }
+
+    private func getDocumentsDirectory() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    public func saveCache() {
+        guard let convId = currentConversationId else { return }
+        UserDefaults.standard.set(convId, forKey: "codepill_active_conv_id")
+
+        let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(convId).json")
+        if let data = try? JSONEncoder().encode(messages) {
+            try? data.write(to: messagesFile)
+        }
+
+        let convsFile = getDocumentsDirectory().appendingPathComponent("cache_conversations.json")
+        if let data = try? JSONEncoder().encode(conversations) {
+            try? data.write(to: convsFile)
+        }
+    }
+
+    public func loadCache() {
+        let convsFile = getDocumentsDirectory().appendingPathComponent("cache_conversations.json")
+        if let data = try? Data(contentsOf: convsFile),
+           let list = try? JSONDecoder().decode([ConversationItem].self, from: data) {
+            self.conversations = list
+        }
+
+        if let savedConvId = UserDefaults.standard.string(forKey: "codepill_active_conv_id") {
+            self.currentConversationId = savedConvId
+            let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(savedConvId).json")
+            if let data = try? Data(contentsOf: messagesFile),
+               let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
+                self.messages = list
+                return
+            }
+        }
+        self.messages = []
     }
 
     public func addAttachment(item: AttachmentItem) {
@@ -117,6 +154,12 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func selectConversation(_ item: ConversationItem) {
         self.currentConversationId = item.id
+        // Immediately try to load cached messages for this conversation if available
+        let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(item.id).json")
+        if let data = try? Data(contentsOf: messagesFile),
+           let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
+            self.messages = list
+        }
         client.sendSync(conversationId: item.id)
         Haptics.shared.selection()
     }
@@ -158,6 +201,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             conversationId: currentConversationId,
             model: selectedModel
         )
+        saveCache()
     }
 
     public func cancelTurn() {
@@ -197,11 +241,6 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     }
 
     public func didStartTool(callId: String, name: String, summary: String, parametersText: String?) {
-        guard let id = currentAssistantMessageId,
-              let idx = messages.firstIndex(where: { $0.id == id }) else {
-            return
-        }
-
         let item = ToolCallItem(
             id: callId,
             name: name,
@@ -209,35 +248,54 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             parametersText: parametersText,
             isRunning: true
         )
-        messages[idx].toolCalls.append(item)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            if let id = currentAssistantMessageId, let idx = messages.firstIndex(where: { $0.id == id }) {
+                messages[idx].toolCalls.append(item)
+            } else if let lastIdx = messages.indices.last, messages[lastIdx].role == .assistant {
+                messages[lastIdx].toolCalls.append(item)
+                currentAssistantMessageId = messages[lastIdx].id
+            } else {
+                let newMsg = ChatMessage(role: .assistant, text: "", toolCalls: [item])
+                messages.append(newMsg)
+                currentAssistantMessageId = newMsg.id
+            }
+        }
+        saveCache()
         Haptics.shared.impact(.light)
     }
 
     public func didEndTool(callId: String, success: Bool, output: String, fullOutput: String?, duration: Double?) {
-        guard let id = currentAssistantMessageId,
-              let idx = messages.firstIndex(where: { $0.id == id }) else {
-            return
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            var updated = false
+            for mIdx in messages.indices.reversed() {
+                if let tIdx = messages[mIdx].toolCalls.firstIndex(where: { $0.id == callId }) {
+                    messages[mIdx].toolCalls[tIdx].isRunning = false
+                    messages[mIdx].toolCalls[tIdx].isSuccess = success
+                    messages[mIdx].toolCalls[tIdx].output = output
+                    messages[mIdx].toolCalls[tIdx].fullOutput = fullOutput
+                    messages[mIdx].toolCalls[tIdx].duration = duration
+                    updated = true
+                    break
+                }
+            }
+            if !updated, let lastIdx = messages.indices.last {
+                if let tIdx = messages[lastIdx].toolCalls.indices.last {
+                    messages[lastIdx].toolCalls[tIdx].isRunning = false
+                    messages[lastIdx].toolCalls[tIdx].isSuccess = success
+                    messages[lastIdx].toolCalls[tIdx].output = output
+                    messages[lastIdx].toolCalls[tIdx].fullOutput = fullOutput
+                    messages[lastIdx].toolCalls[tIdx].duration = duration
+                }
+            }
         }
-
-        if let toolIdx = messages[idx].toolCalls.firstIndex(where: { $0.id == callId }) {
-            messages[idx].toolCalls[toolIdx].isRunning = false
-            messages[idx].toolCalls[toolIdx].isSuccess = success
-            messages[idx].toolCalls[toolIdx].output = output
-            messages[idx].toolCalls[toolIdx].fullOutput = fullOutput
-            messages[idx].toolCalls[toolIdx].duration = duration
-        } else if let lastIdx = messages[idx].toolCalls.indices.last {
-            messages[idx].toolCalls[lastIdx].isRunning = false
-            messages[idx].toolCalls[lastIdx].isSuccess = success
-            messages[idx].toolCalls[lastIdx].output = output
-            messages[idx].toolCalls[lastIdx].fullOutput = fullOutput
-            messages[idx].toolCalls[lastIdx].duration = duration
-        }
+        saveCache()
     }
 
     public func didFinishTurn(conversationId: String, success: Bool, summary: String?) {
         isExecuting = false
         currentAssistantMessageId = nil
         currentIslandState = nil
+        saveCache()
 
         if success {
             Haptics.shared.notify(.success)
@@ -258,6 +316,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         }
         self.isExecuting = isBusy
         self.currentIslandState = islandState
+        saveCache()
     }
 
     public func didCompleteRollback(
@@ -269,11 +328,13 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         if let prompt = restoredPrompt {
             self.inputText = prompt
         }
+        saveCache()
         Haptics.shared.notify(.success)
     }
 
     public func didReceiveConversationsList(_ list: [ConversationItem]) {
         self.conversations = list
+        saveCache()
     }
 
     public func didReceiveError(_ message: String) {

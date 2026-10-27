@@ -34,7 +34,7 @@ public struct SettingsView: View {
                             client.connect()
                             Task { await loadData() }
                         }
-                        .tint(.purple)
+                        .tint(Color.accentColor)
 
                         Spacer()
 
@@ -74,7 +74,7 @@ public struct SettingsView: View {
                                 await loadData()
                             }
                         }
-                        .tint(.purple)
+                        .tint(Color.accentColor)
 
                         Spacer()
 

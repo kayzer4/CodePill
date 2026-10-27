@@ -176,6 +176,7 @@ impl SessionManager {
             .arg(&enriched_prompt)
             .arg("--output-format")
             .arg("stream-json")
+            .arg("--dangerously-skip-permissions")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -361,6 +362,8 @@ impl SessionManager {
 
                     match step_type {
                         "tool" => {
+                            let step_index = step.get("step_index").and_then(|i| i.as_u64()).unwrap_or(0);
+                            let call_id = format!("{}-step-{}", conv_id, step_index);
                             let tool_name = step.get("tool_name").and_then(|v| v.as_str()).unwrap_or("unknown");
                             let tool_info = step.get("tool_info");
                             let params = tool_info.and_then(|i| i.get("parameters")).cloned();
@@ -412,19 +415,27 @@ impl SessionManager {
                                     let mut map = convs.write().await;
                                     if let Some(c) = map.get_mut(conv_id) {
                                         c.current_island_state = Some(island_state.clone());
+                                        if c.messages.last().map(|m| m.role.as_str()) != Some("assistant") {
+                                            c.messages.push(StoredMessage {
+                                                id: uuid::Uuid::new_v4().to_string(),
+                                                role: "assistant".to_string(),
+                                                text: String::new(),
+                                                tool_calls: Vec::new(),
+                                                attachments: Vec::new(),
+                                                timestamp: chrono_or_simple_time(),
+                                            });
+                                        }
                                         if let Some(last) = c.messages.last_mut() {
-                                            if last.role == "assistant" {
-                                                last.tool_calls.push(StoredToolCall {
-                                                    id: uuid::Uuid::new_v4().to_string(),
-                                                    name: tool_name.to_string(),
-                                                    summary: desc.clone(),
-                                                    parameters: params.clone(),
-                                                    output: None,
-                                                    is_running: true,
-                                                    is_success: false,
-                                                    duration_seconds: None,
-                                                });
-                                            }
+                                            last.tool_calls.push(StoredToolCall {
+                                                id: call_id.clone(),
+                                                name: tool_name.to_string(),
+                                                summary: desc.clone(),
+                                                parameters: params.clone(),
+                                                output: None,
+                                                is_running: true,
+                                                is_success: false,
+                                                duration_seconds: None,
+                                            });
                                         }
                                     }
                                 }
@@ -437,7 +448,7 @@ impl SessionManager {
                                 let _ = tx.send((
                                     conv_id.to_string(),
                                     ServerMessage::ToolStart {
-                                        call_id: uuid::Uuid::new_v4().to_string(),
+                                        call_id: call_id.clone(),
                                         tool_name: tool_name.to_string(),
                                         summary: desc,
                                         parameters: params,
@@ -455,7 +466,9 @@ impl SessionManager {
                                     if let Some(c) = map.get_mut(conv_id) {
                                         if let Some(last) = c.messages.last_mut() {
                                             if last.role == "assistant" {
-                                                if let Some(t) = last.tool_calls.last_mut() {
+                                                let target_idx = last.tool_calls.iter().rposition(|t| t.id == call_id)
+                                                    .unwrap_or_else(|| last.tool_calls.len().saturating_sub(1));
+                                                if let Some(t) = last.tool_calls.get_mut(target_idx) {
                                                     t.is_running = false;
                                                     t.is_success = true;
                                                     t.output = Some(output.clone());
@@ -469,7 +482,7 @@ impl SessionManager {
                                 let _ = tx.send((
                                     conv_id.to_string(),
                                     ServerMessage::ToolEnd {
-                                        call_id: "".to_string(),
+                                        call_id: call_id.clone(),
                                         success: true,
                                         output_preview: truncate(&output, 100),
                                         full_output: Some(output),

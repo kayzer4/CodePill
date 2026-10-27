@@ -13,7 +13,7 @@ public struct StrictCardModifier: ViewModifier {
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
-                        isHighlighted ? Color.purple.opacity(0.6) : Color.white.opacity(0.12),
+                        isHighlighted ? Color.accentColor.opacity(0.6) : Color.white.opacity(0.12),
                         lineWidth: 1
                     )
             )
