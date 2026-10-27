@@ -37,8 +37,15 @@ public struct ToolDetailSheet: View {
 
                             Spacer()
 
+                            let textToCopy = item.fullOutput ?? item.output ?? ""
+
+                            ShareLink(item: textToCopy) {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(Color.accentColor)
+                            }
+
                             Button {
-                                let textToCopy = item.fullOutput ?? item.output ?? ""
                                 UIPasteboard.general.string = textToCopy
                                 copied = true
                                 Haptics.shared.notify(.success)

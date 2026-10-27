@@ -45,6 +45,10 @@ impl SessionManager {
         }
     }
 
+    pub fn workspace(&self) -> &str {
+        &self.workspace
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<(String, ServerMessage)> {
         self.broadcast_tx.subscribe()
     }

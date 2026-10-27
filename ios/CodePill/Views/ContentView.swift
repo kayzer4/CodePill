@@ -141,13 +141,20 @@ public struct ContentView: View {
                             } label: {
                                 ZStack {
                                     Circle()
-                                        .fill(Color(UIColor.secondarySystemBackground))
-                                        .frame(width: 40, height: 40)
-                                        .shadow(color: .black.opacity(0.35), radius: 6, x: 0, y: 3)
+                                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.82))
+                                        .frame(width: 42, height: 42)
                                         .overlay(
                                             Circle()
-                                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+                                                .strokeBorder(
+                                                    LinearGradient(
+                                                        colors: [Color.white.opacity(0.35), Color.white.opacity(0.06)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    ),
+                                                    lineWidth: 1
+                                                )
                                         )
+                                        .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
 
                                     Image(systemName: "chevron.down")
                                         .font(.system(size: 15, weight: .bold))
@@ -158,6 +165,7 @@ public struct ContentView: View {
                                             .fill(Color.accentColor)
                                             .frame(width: 9, height: 9)
                                             .offset(x: 13, y: -13)
+                                            .shadow(color: Color.accentColor.opacity(0.8), radius: 4, x: 0, y: 0)
                                     }
                                 }
                             }
@@ -177,12 +185,44 @@ public struct ContentView: View {
                     .padding(.bottom, 6)
                 }
 
+                // File downloading indicator HUD
+                if viewModel.isDownloadingFile {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.75)
+                        Text("Fetching file from server...")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.primary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .liquidGlass(cornerRadius: 16)
+                    .padding(.bottom, 6)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                }
+
+                if let err = viewModel.downloadError {
+                    Text(err)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Color.red.opacity(0.85))
+                        .clipShape(Capsule())
+                        .padding(.bottom, 6)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+                                withAnimation { viewModel.downloadError = nil }
+                            }
+                        }
+                }
+
                 // Input Bar
                 strictInputBar
                     .padding(.horizontal, 14)
                     .padding(.bottom, 8)
             }
-            .background(Color(UIColor.systemBackground))
+            .background(LiquidAmbientBackground())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -207,7 +247,8 @@ public struct ContentView: View {
                         HStack(spacing: 5) {
                             Circle()
                                 .fill(statusIndicatorColor)
-                                .frame(width: 6, height: 6)
+                                .frame(width: 6.5, height: 6.5)
+                                .shadow(color: statusIndicatorColor.opacity(0.85), radius: 4, x: 0, y: 0)
 
                             Text(statusIndicatorText)
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -275,6 +316,30 @@ public struct ContentView: View {
         .sheet(isPresented: $showConversations) {
             ConversationsSheet(viewModel: viewModel)
         }
+        .sheet(isPresented: Binding(
+            get: { viewModel.activeWebURL != nil },
+            set: { if !$0 { viewModel.activeWebURL = nil } }
+        )) {
+            if let url = viewModel.activeWebURL {
+                SafariView(url: url)
+                    .ignoresSafeArea()
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel.previewLocalURL != nil },
+            set: { if !$0 { viewModel.previewLocalURL = nil } }
+        )) {
+            if let localURL = viewModel.previewLocalURL {
+                FilePreviewSheet(
+                    localURL: localURL,
+                    originalPath: viewModel.previewOriginalPath
+                )
+            }
+        }
+        .environment(\.openURL, OpenURLAction { url in
+            handleURLTap(url)
+            return .handled
+        })
         .onChange(of: selectedPhotoItem) { newItem in
             guard let newItem = newItem else { return }
             Task {
@@ -371,12 +436,21 @@ public struct ContentView: View {
             )
             .padding(.trailing, 6)
         }
-        .background(Color(UIColor.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-        )
+        .liquidGlass(cornerRadius: 22, specularOpacity: 0.28)
+    }
+
+    private func handleURLTap(_ url: URL) {
+        let urlString = url.absoluteString
+        if url.scheme == "http" || url.scheme == "https" {
+            viewModel.activeWebURL = url
+            Haptics.shared.impact(.light)
+        } else {
+            let clean = urlString
+                .replacingOccurrences(of: "file://", with: "")
+                .components(separatedBy: "#").first ?? urlString
+            viewModel.openFilePreview(path: clean)
+            Haptics.shared.impact(.medium)
+        }
     }
 
     private func hideKeyboard() {

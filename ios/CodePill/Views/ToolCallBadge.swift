@@ -38,12 +38,7 @@ public struct ToolCallBadge: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(Color(UIColor.tertiarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
-            )
+            .liquidGlass(cornerRadius: 12, specularOpacity: 0.18)
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetails) {

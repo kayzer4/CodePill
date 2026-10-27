@@ -52,6 +52,8 @@ targets:
               NSTemporaryExceptionAllowsInsecureHTTPLoads: true
     dependencies:
       - target: CodePillWidget
+      - sdk: SafariServices.framework
+      - sdk: QuickLook.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.codepill.app

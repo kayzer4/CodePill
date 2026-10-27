@@ -8,12 +8,20 @@ public struct MessageRow: View {
     public var body: some View {
         HStack(alignment: .top, spacing: 10) {
             if message.role == .assistant {
-                Image(systemName: "pill.fill")
-                    .font(.caption2)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(6)
-                    .background(Color.accentColor.opacity(0.15))
-                    .clipShape(Circle())
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.18))
+                        .frame(width: 26, height: 26)
+
+                    Circle()
+                        .strokeBorder(Color.accentColor.opacity(0.45), lineWidth: 0.8)
+                        .frame(width: 26, height: 26)
+
+                    Image(systemName: "pill.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .padding(.top, 4)
             }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
@@ -80,10 +88,20 @@ public struct MessageRow: View {
             }
 
             if message.role == .user {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(6)
+                ZStack {
+                    Circle()
+                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.85))
+                        .frame(width: 26, height: 26)
+
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8)
+                        .frame(width: 26, height: 26)
+
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
@@ -98,16 +116,69 @@ public struct MessageRow: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-        } else {
-            MarkdownMessageView(text: message.text, isUser: message.role == .user)
+        } else if message.role == .user {
+            // iOS 26 User Liquid Gradient Bubble
+            MarkdownMessageView(text: message.text, isUser: true)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(bubbleBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.06, green: 0.46, blue: 1.0),
+                            Color(red: 0.28, green: 0.26, blue: 0.98)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .white.opacity(0.35), location: 0.0),
+                                    .init(color: .white.opacity(0.08), location: 0.6),
+                                    .init(color: .clear, location: 1.0)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 0.8
+                        )
+                )
+                .shadow(color: Color(red: 0.06, green: 0.46, blue: 1.0).opacity(0.24), radius: 8, x: 0, y: 3)
+        } else {
+            // iOS 26 Assistant Liquid Glass Bubble
+            MarkdownMessageView(text: message.text, isUser: false)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color(UIColor.secondarySystemBackground).opacity(0.72))
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    }
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .white.opacity(0.22), location: 0.0),
+                                    .init(color: .white.opacity(0.04), location: 0.5),
+                                    .init(color: .clear, location: 0.8),
+                                    .init(color: .white.opacity(0.08), location: 1.0)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                )
+                .shadow(color: Color.black.opacity(0.20), radius: 6, x: 0, y: 3)
         }
     }
 
@@ -120,11 +191,12 @@ public struct MessageRow: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: 220, maxHeight: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.8)
                         )
+                        .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 3)
                 } else {
                     HStack(spacing: 8) {
                         Image(systemName: "doc.fill")
@@ -137,12 +209,7 @@ public struct MessageRow: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Color(UIColor.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                    )
+                    .liquidGlass(cornerRadius: 12)
                 }
             }
         }
@@ -153,18 +220,6 @@ public struct MessageRow: View {
         case .user: return .white
         case .assistant: return .primary
         case .system: return .secondary
-        }
-    }
-
-    @ViewBuilder
-    private var bubbleBackground: some View {
-        switch message.role {
-        case .user:
-            Color.accentColor
-        case .assistant:
-            Color(UIColor.secondarySystemBackground)
-        case .system:
-            Color.clear
         }
     }
 }

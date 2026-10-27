@@ -80,18 +80,33 @@ public struct CodeBlockCard: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header bar
-            HStack {
+            // iOS 26 Cyber-Glass Header bar
+            HStack(spacing: 8) {
+                // Language pill
                 Text(language.isEmpty ? "CODE" : language.uppercased())
-                    .font(.caption2.bold().monospaced())
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.accentColor.opacity(0.16))
+                    .clipShape(Capsule())
 
                 Spacer()
 
+                // Share snippet
+                ShareLink(item: code) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(5)
+                }
+                .buttonStyle(.plain)
+
+                // Copy code
                 Button {
                     UIPasteboard.general.string = code
                     Haptics.shared.notify(.success)
-                    withAnimation { copied = true }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { copied = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         withAnimation { copied = false }
                     }
@@ -100,29 +115,41 @@ public struct CodeBlockCard: View {
                         Image(systemName: copied ? "checkmark" : "doc.on.doc")
                         Text(copied ? "Copied" : "Copy")
                     }
-                    .font(.caption2.bold())
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(copied ? .green : .secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(copied ? 0.12 : 0.06))
+                    .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Color.white.opacity(0.05))
+            .background(Color(UIColor.secondarySystemBackground).opacity(0.6))
 
             // Code content
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.95))
+                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.92))
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .background(Color(UIColor.black))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.black.opacity(0.85))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.8
+                )
         )
+        .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 3)
     }
 }

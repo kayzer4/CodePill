@@ -13,6 +13,11 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     @Published public var currentConversationId: String? = nil
     @Published public var conversations: [ConversationItem] = []
     @Published public var isConnected: Bool = false
+    @Published public var activeWebURL: URL? = nil
+    @Published public var previewLocalURL: URL? = nil
+    @Published public var previewOriginalPath: String = ""
+    @Published public var isDownloadingFile: Bool = false
+    @Published public var downloadError: String? = nil
 
     public let client: CodePillClient
     private var currentAssistantMessageId: UUID?
@@ -162,6 +167,59 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         }
         client.sendSync(conversationId: item.id)
         Haptics.shared.selection()
+    }
+
+    public func openFilePreview(path: String) {
+        Task { @MainActor in
+            self.isDownloadingFile = true
+            self.downloadError = nil
+
+            let clean = path.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "file://", with: "")
+
+            let filename = (clean as NSString).lastPathComponent
+
+            // If it's already a local file that exists, open directly
+            let localCandidate = URL(fileURLWithPath: clean)
+            if FileManager.default.fileExists(atPath: localCandidate.path) {
+                self.previewOriginalPath = clean
+                self.previewLocalURL = localCandidate
+                self.isDownloadingFile = false
+                return
+            }
+
+            // Fetch from server daemon
+            let cleanQuery = clean.components(separatedBy: "#").first ?? clean
+            guard let encoded = cleanQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let url = URL(string: "http://\(client.host):\(client.port)/api/file/raw?path=\(encoded)") else {
+                self.downloadError = "Invalid path"
+                self.isDownloadingFile = false
+                return
+            }
+
+            do {
+                let (tempURL, response) = try await URLSession.shared.download(from: url)
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    self.downloadError = "File not found on server"
+                    self.isDownloadingFile = false
+                    return
+                }
+
+                let destination = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(filename.isEmpty ? "downloaded_file" : filename)
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: tempURL, to: destination)
+
+                self.previewOriginalPath = clean
+                self.previewLocalURL = destination
+                self.isDownloadingFile = false
+                Haptics.shared.notify(.success)
+            } catch {
+                self.downloadError = error.localizedDescription
+                self.isDownloadingFile = false
+                Haptics.shared.notify(.error)
+            }
+        }
     }
 
     public func rollbackTurn() {

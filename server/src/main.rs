@@ -1,7 +1,11 @@
 use axum::{
+    extract::Query,
+    http::{header, StatusCode},
+    response::Response,
     routing::{get, post},
     Extension, Json, Router,
 };
+use base64::prelude::*;
 use clap::Parser;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -101,6 +105,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_check))
         .route("/ws", get(ws_handler))
         .route("/api/conversations", get(get_conversations))
+        .route("/api/file", get(get_file_info))
+        .route("/api/file/raw", get(get_file_raw))
         .route("/api/proxy", get(get_proxy).post(set_proxy))
         .route("/api/proxy/test", post(test_proxy))
         .route("/api/account", get(get_account))
@@ -226,4 +232,153 @@ async fn get_models(
         Ok(models) => Json(serde_json::json!({ "models": models })),
         Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
     }
+}
+
+#[derive(serde::Deserialize)]
+struct FileQuery {
+    path: String,
+}
+
+#[derive(serde::Serialize)]
+struct FileInfoResponse {
+    success: bool,
+    path: String,
+    filename: String,
+    size: u64,
+    is_binary: bool,
+    content: Option<String>,
+    error: Option<String>,
+}
+
+async fn get_file_info(
+    Extension(session_mgr): Extension<Arc<SessionManager>>,
+    Query(query): Query<FileQuery>,
+) -> Json<FileInfoResponse> {
+    let clean_path = query
+        .path
+        .trim_start_matches("file://")
+        .split('#')
+        .next()
+        .unwrap_or(&query.path);
+
+    let target_path = if std::path::Path::new(clean_path).is_absolute() {
+        std::path::PathBuf::from(clean_path)
+    } else {
+        std::path::Path::new(session_mgr.workspace()).join(clean_path)
+    };
+
+    if !target_path.exists() {
+        return Json(FileInfoResponse {
+            success: false,
+            path: clean_path.to_string(),
+            filename: "".to_string(),
+            size: 0,
+            is_binary: false,
+            content: None,
+            error: Some(format!("File not found: {}", clean_path)),
+        });
+    }
+
+    let filename = target_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".to_string());
+
+    match tokio::fs::read(&target_path).await {
+        Ok(bytes) => {
+            let size = bytes.len() as u64;
+            match String::from_utf8(bytes.clone()) {
+                Ok(text) => Json(FileInfoResponse {
+                    success: true,
+                    path: target_path.to_string_lossy().to_string(),
+                    filename,
+                    size,
+                    is_binary: false,
+                    content: Some(text),
+                    error: None,
+                }),
+                Err(_) => Json(FileInfoResponse {
+                    success: true,
+                    path: target_path.to_string_lossy().to_string(),
+                    filename,
+                    size,
+                    is_binary: true,
+                    content: Some(BASE64_STANDARD.encode(&bytes)),
+                    error: None,
+                }),
+            }
+        }
+        Err(e) => Json(FileInfoResponse {
+            success: false,
+            path: target_path.to_string_lossy().to_string(),
+            filename,
+            size: 0,
+            is_binary: false,
+            content: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+async fn get_file_raw(
+    Extension(session_mgr): Extension<Arc<SessionManager>>,
+    Query(query): Query<FileQuery>,
+) -> Result<Response, (StatusCode, String)> {
+    let clean_path = query
+        .path
+        .trim_start_matches("file://")
+        .split('#')
+        .next()
+        .unwrap_or(&query.path);
+
+    let target_path = if std::path::Path::new(clean_path).is_absolute() {
+        std::path::PathBuf::from(clean_path)
+    } else {
+        std::path::Path::new(session_mgr.workspace()).join(clean_path)
+    };
+
+    if !target_path.exists() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("File not found: {}", clean_path),
+        ));
+    }
+
+    let bytes = tokio::fs::read(&target_path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let filename = target_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "download".to_string());
+
+    let ext = target_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let content_type = match ext.as_str() {
+        "swift" | "rs" | "py" | "js" | "ts" | "c" | "cpp" | "h" | "txt" | "md" | "toml"
+        | "yaml" | "yml" | "json" | "sh" => "text/plain; charset=utf-8",
+        "html" => "text/html; charset=utf-8",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    };
+
+    let response = Response::builder()
+        .header(header::CONTENT_TYPE, content_type)
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("inline; filename=\"{}\"", filename),
+        )
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(response)
 }
