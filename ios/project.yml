@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: io.codepill
   deploymentTarget:
     iOS: 16.1
-  xcodeVersion: "15.0"
+  xcodeVersion: "16.0"
 
 settings:
   base:
