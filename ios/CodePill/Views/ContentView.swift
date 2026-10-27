@@ -224,6 +224,18 @@ public struct ContentView: View {
             }
             .background(LiquidAmbientBackground())
             .navigationBarTitleDisplayMode(.inline)
+            .overlay(
+                Group {
+                    if viewModel.isExecuting {
+                        Color.black.opacity(0.2)
+                            .ignoresSafeArea()
+                            .allowsHitTesting(false)
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .allowsHitTesting(false)
+                    }
+                }
+            )
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -289,7 +301,7 @@ public struct ContentView: View {
                             } label: {
                                 Label("Undo Last Turn", systemImage: "arrow.uturn.backward")
                             }
-                            .disabled(viewModel.isExecuting)
+            
 
                             Divider()
 

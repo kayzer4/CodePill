@@ -1,84 +1,87 @@
-name: Build CodePill
+name: CI Build
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
+    branches: [ main, master ]
 
 jobs:
-  build-ios:
-    name: Build iOS Native App & Dynamic Island Widget
-    runs-on: macos-14
+  build:
+    runs-on: macos-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode Version
-        run: |
-          for xcode_path in /Applications/Xcode_16*.app /Applications/Xcode.app; do
-            if [ -d "$xcode_path" ]; then
-              echo "Selecting $xcode_path"
-              sudo xcode-select -s "$xcode_path"
-              break
-            fi
-          done
-          xcodebuild -version
+      # ---------- Server (Rust) ----------
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
 
-      - name: Install XcodeGen
-        run: |
-          brew install xcodegen
+      - name: Build server (debug)
+        working-directory: ./server
+        run: cargo build --verbose
 
-      - name: Generate Xcode Project
-        run: |
-          cd ios
-          xcodegen generate
+      - name: Build server (release)
+        working-directory: ./server
+        run: cargo build --release --verbose
 
-      - name: Build CodePill Application & Widget Extension
+      # ---------- iOS App ----------
+      - name: Install CocoaPods (if needed)
         run: |
-          xcodebuild clean build \
-            -project ios/CodePill.xcodeproj \
+          if [ -f "ios/Podfile" ]; then
+            sudo gem install cocoapods
+            pod install --project-directory=ios
+          fi
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build iOS app (Debug)
+        working-directory: ./ios/CodePill
+        env:
+          CODE_SIGNING_ALLOWED: "NO"
+          CODE_SIGN_IDENTITY: ""
+          CODE_SIGNING_REQUIRED: "NO"
+        run: |
+          xcodebuild \
             -scheme CodePill \
-            -destination "generic/platform=iOS" \
+            -configuration Debug \
+            -derivedDataPath build \
+            -quiet \
+            clean build
+
+      - name: Build iOS app (Release IPA)
+        working-directory: ./ios/CodePill
+        env:
+          CODE_SIGNING_ALLOWED: "NO"
+          CODE_SIGN_IDENTITY: ""
+          CODE_SIGNING_REQUIRED: "NO"
+        run: |
+          xcodebuild \
+            -scheme CodePill \
             -configuration Release \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            -archivePath ${{ runner.temp }}/CodePill.xcarchive \
+            -quiet \
+            clean archive
+          xcodebuild -exportArchive \
+            -archivePath ${{ runner.temp }}/CodePill.xcarchive \
+            -exportOptionsPlist ${{ github.workspace }}/ios/ExportOptions.plist \
+            -exportPath ${{ runner.temp }}/ExportedIPA \
+            -quiet
 
-      - name: Package Payload into unsigned IPA
-        run: |
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "CodePill.app" -type d | head -n 1)
-          echo "Found app at: $APP_PATH"
-          mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
-          zip -r CodePill-unsigned.ipa Payload/
-
-      - name: Upload iOS App & IPA Artifacts
+      # ---------- Upload artifacts ----------
+      - name: Upload server binary (release)
         uses: actions/upload-artifact@v4
         with:
-          name: CodePill-iOS-Release
-          path: |
-            CodePill-unsigned.ipa
-            Payload/CodePill.app
+          name: codepill-server-release
+          path: ./server/target/release/codepill-server
 
-  build-server:
-    name: Build Rust Server Daemon (Linux x86_64)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Server Binary
-        run: |
-          cargo build --release --manifest-path server/Cargo.toml
-
-      - name: Upload Server Binary Artifact
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: codepill-server-linux-x86_64
-          path: server/target/release/codepill-server
+          name: codepill-ipa
+          path: ${{ runner.temp }}/ExportedIPA/*.ipa
