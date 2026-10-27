@@ -196,7 +196,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         }
     }
 
-    public func didStartTool(callId: String, name: String, summary: String) {
+    public func didStartTool(callId: String, name: String, summary: String, parametersText: String?) {
         guard let id = currentAssistantMessageId,
               let idx = messages.firstIndex(where: { $0.id == id }) else {
             return
@@ -206,13 +206,14 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             id: callId,
             name: name,
             summary: summary,
+            parametersText: parametersText,
             isRunning: true
         )
         messages[idx].toolCalls.append(item)
         Haptics.shared.impact(.light)
     }
 
-    public func didEndTool(callId: String, success: Bool, output: String) {
+    public func didEndTool(callId: String, success: Bool, output: String, fullOutput: String?, duration: Double?) {
         guard let id = currentAssistantMessageId,
               let idx = messages.firstIndex(where: { $0.id == id }) else {
             return
@@ -222,10 +223,14 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             messages[idx].toolCalls[toolIdx].isRunning = false
             messages[idx].toolCalls[toolIdx].isSuccess = success
             messages[idx].toolCalls[toolIdx].output = output
+            messages[idx].toolCalls[toolIdx].fullOutput = fullOutput
+            messages[idx].toolCalls[toolIdx].duration = duration
         } else if let lastIdx = messages[idx].toolCalls.indices.last {
             messages[idx].toolCalls[lastIdx].isRunning = false
             messages[idx].toolCalls[lastIdx].isSuccess = success
             messages[idx].toolCalls[lastIdx].output = output
+            messages[idx].toolCalls[lastIdx].fullOutput = fullOutput
+            messages[idx].toolCalls[lastIdx].duration = duration
         }
     }
 
