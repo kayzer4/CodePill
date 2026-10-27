@@ -40,38 +40,46 @@ jobs:
       - name: Select Xcode version
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ./ios
+        run: xcodegen generate --spec project.yml
+
       - name: Build iOS app (Debug)
-        working-directory: ./ios/CodePill
+        working-directory: ./ios
         env:
           CODE_SIGNING_ALLOWED: "NO"
           CODE_SIGN_IDENTITY: ""
           CODE_SIGNING_REQUIRED: "NO"
         run: |
           xcodebuild \
+            -project CodePill.xcodeproj \
             -scheme CodePill \
             -configuration Debug \
+            -sdk iphonesimulator \
             -derivedDataPath build \
             -quiet \
+            CODE_SIGNING_ALLOWED=NO \
             clean build
 
-      - name: Build iOS app (Release IPA)
-        working-directory: ./ios/CodePill
+      - name: Archive iOS app (Release)
+        working-directory: ./ios
         env:
           CODE_SIGNING_ALLOWED: "NO"
           CODE_SIGN_IDENTITY: ""
           CODE_SIGNING_REQUIRED: "NO"
         run: |
           xcodebuild \
+            -project CodePill.xcodeproj \
             -scheme CodePill \
             -configuration Release \
+            -sdk iphoneos \
             -archivePath ${{ runner.temp }}/CodePill.xcarchive \
             -quiet \
+            CODE_SIGNING_ALLOWED=NO \
             clean archive
-          xcodebuild -exportArchive \
-            -archivePath ${{ runner.temp }}/CodePill.xcarchive \
-            -exportOptionsPlist ${{ github.workspace }}/ios/ExportOptions.plist \
-            -exportPath ${{ runner.temp }}/ExportedIPA \
-            -quiet
 
       # ---------- Upload artifacts ----------
       - name: Upload server binary (release)
@@ -80,8 +88,14 @@ jobs:
           name: codepill-server-release
           path: ./server/target/release/codepill-server
 
+      - name: Create unsigned IPA from archive
+        run: |
+          mkdir -p ${{ runner.temp }}/Payload
+          cp -r "${{ runner.temp }}/CodePill.xcarchive/Products/Applications/CodePill.app" "${{ runner.temp }}/Payload/"
+          cd ${{ runner.temp }} && zip -r CodePill-unsigned.ipa Payload/
+
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: codepill-ipa
-          path: ${{ runner.temp }}/ExportedIPA/*.ipa
+          path: ${{ runner.temp }}/CodePill-unsigned.ipa
