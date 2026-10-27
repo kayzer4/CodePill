@@ -57,6 +57,9 @@ public struct ContentView: View {
                                     message: msg,
                                     onRollback: {
                                         viewModel.rollbackTurn()
+                                    },
+                                    onEdit: { prompt in
+                                        viewModel.inputText = prompt
                                     }
                                 )
                                 .id(msg.id)
@@ -72,6 +75,10 @@ public struct ContentView: View {
                                 .id("chatBottomAnchor")
                         }
                         .padding(.vertical, 12)
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+                    .onTapGesture {
+                        hideKeyboard()
                     }
                     .onChange(of: viewModel.messages.last?.text) { _ in
                         proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
@@ -308,5 +315,9 @@ public struct ContentView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
         )
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }

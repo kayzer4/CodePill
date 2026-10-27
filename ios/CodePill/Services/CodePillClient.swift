@@ -312,6 +312,15 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
                     paramsString = String(data: data, encoding: .utf8)
                 }
             }
+            let toolState = CodePillAttributes.ContentState(
+                status: name,
+                currentFile: summary,
+                stepDescription: summary,
+                isBusy: true,
+                needsApproval: false
+            )
+            updateDynamicIsland(toolState)
+            delegate?.didUpdateIsland(state: toolState)
             delegate?.didStartTool(callId: callId, name: name, summary: summary, parametersText: paramsString)
 
         case "tool_end":
@@ -460,6 +469,9 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     }
 
     private func updateDynamicIsland(_ state: CodePillAttributes.ContentState) {
+        if currentActivity == nil {
+            currentActivity = Activity<CodePillAttributes>.activities.first
+        }
         guard let activity = currentActivity else { return }
         Task {
             await activity.update(.init(state: state, staleDate: nil))
@@ -467,6 +479,9 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     }
 
     private func endDynamicIsland(success: Bool) {
+        if currentActivity == nil {
+            currentActivity = Activity<CodePillAttributes>.activities.first
+        }
         guard let activity = currentActivity else { return }
         let finalState = CodePillAttributes.ContentState(
             status: success ? "Done" : "Failed",

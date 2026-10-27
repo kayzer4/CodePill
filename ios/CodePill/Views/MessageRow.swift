@@ -3,6 +3,7 @@ import SwiftUI
 public struct MessageRow: View {
     public let message: ChatMessage
     public var onRollback: (() -> Void)? = nil
+    public var onEdit: ((String) -> Void)? = nil
 
     public var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -31,7 +32,7 @@ public struct MessageRow: View {
                     .padding(.vertical, 2)
                 }
 
-                // Message bubble
+                // Message bubble with Markdown formatting
                 if !message.text.isEmpty {
                     HStack(alignment: .bottom, spacing: 8) {
                         if message.role == .user, let rollback = onRollback {
@@ -45,17 +46,32 @@ public struct MessageRow: View {
                             .buttonStyle(.plain)
                         }
 
-                        Text(message.text)
-                            .font(message.role == .system ? .caption.monospaced() : .body)
-                            .foregroundStyle(textColor)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(bubbleBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                            )
+                        bubbleContent
+                            .contextMenu {
+                                Button {
+                                    UIPasteboard.general.string = message.text
+                                    Haptics.shared.notify(.success)
+                                } label: {
+                                    Label("Copy Text", systemImage: "doc.on.doc")
+                                }
+
+                                if message.role == .user, let onEdit = onEdit {
+                                    Button {
+                                        onEdit(message.text)
+                                        Haptics.shared.impact(.light)
+                                    } label: {
+                                        Label("Edit Prompt", systemImage: "pencil")
+                                    }
+                                }
+
+                                if let rollback = onRollback, message.role == .user {
+                                    Button(role: .destructive) {
+                                        rollback()
+                                    } label: {
+                                        Label("Rollback Turn", systemImage: "arrow.uturn.backward")
+                                    }
+                                }
+                            }
                     }
                 }
             }
@@ -69,6 +85,27 @@ public struct MessageRow: View {
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
         .padding(.horizontal, 14)
+    }
+
+    @ViewBuilder
+    private var bubbleContent: some View {
+        if message.role == .system {
+            Text(message.text)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+        } else {
+            MarkdownMessageView(text: message.text, isUser: message.role == .user)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(bubbleBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        }
     }
 
     @ViewBuilder
@@ -105,14 +142,6 @@ public struct MessageRow: View {
                     )
                 }
             }
-        }
-    }
-
-    private var textColor: Color {
-        switch message.role {
-        case .user: return .white
-        case .assistant: return .primary
-        case .system: return .secondary
         }
     }
 

@@ -5,7 +5,7 @@ public struct LiveIslandPreview: View {
 
     public var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "pill.fill")
+            Image(systemName: iconFor(state))
                 .foregroundStyle(Color.accentColor)
                 .font(.footnote)
 
@@ -15,10 +15,19 @@ public struct LiveIslandPreview: View {
                     .scaleEffect(0.65)
             }
 
-            Text(state.stepDescription)
-                .font(.caption.monospaced())
-                .lineLimit(1)
-                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(state.stepDescription)
+                    .font(.caption.bold().monospaced())
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+
+                if let file = state.currentFile, !file.isEmpty, file != state.stepDescription {
+                    Text(file)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
 
             Spacer()
 
@@ -34,6 +43,27 @@ public struct LiveIslandPreview: View {
         .padding(.vertical, 8)
         .background(Color(UIColor.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
         .padding(.horizontal, 14)
+    }
+
+    private func iconFor(_ state: CodePillAttributes.ContentState) -> String {
+        let lower = (state.status + " " + state.stepDescription).lowercased()
+        if lower.contains("run") || lower.contains("command") || lower.contains("bash") {
+            return "terminal.fill"
+        }
+        if lower.contains("edit") || lower.contains("write") || lower.contains("replace") {
+            return "pencil.and.outline"
+        }
+        if lower.contains("view") || lower.contains("read") {
+            return "eye.fill"
+        }
+        if lower.contains("search") || lower.contains("web") {
+            return "globe"
+        }
+        return "pill.fill"
     }
 }
