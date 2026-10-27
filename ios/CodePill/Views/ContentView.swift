@@ -117,7 +117,7 @@ public struct ContentView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)
-                        .foregroundStyle(viewModel.inputText.isEmpty ? .secondary : .purple)
+                        .foregroundColor(viewModel.inputText.isEmpty ? Color.secondary : Color.purple)
                 }
                 .disabled(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
