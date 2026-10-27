@@ -1,3 +1,4 @@
+import ActivityKit
 import SwiftUI
 
 public struct SettingsView: View {
@@ -15,6 +16,8 @@ public struct SettingsView: View {
     @State private var proxyEnabled: Bool = true
     @State private var proxyTestStatus: String? = nil
     @State private var isLoading: Bool = false
+    @State private var showIslandAlert: Bool = false
+    @State private var islandTestResult: String = ""
 
     public var body: some View {
         NavigationStack {
@@ -161,6 +164,38 @@ public struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                Section("Dynamic Island & Live Activities") {
+                    HStack {
+                        Text("iOS Live Activities")
+                        Spacer()
+                        Text(ActivityAuthorizationInfo().areActivitiesEnabled ? "Allowed" : "Disabled in iOS")
+                            .font(.caption.bold())
+                            .foregroundStyle(ActivityAuthorizationInfo().areActivitiesEnabled ? Color.green : Color.orange)
+                    }
+
+                    Button {
+                        let (success, msg) = client.startDynamicIsland(prompt: "CodePill Dynamic Island Active", projectName: "CodePill")
+                        islandTestResult = (success ? "✅ " : "⚠️ ") + msg
+                        showIslandAlert = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "pill.fill")
+                                .foregroundStyle(Color.accentColor)
+                            Text("Launch Dynamic Island Now")
+                                .font(.body.bold())
+                        }
+                    }
+
+                    Text("If Dynamic Island does not show, verify that Live Activities are toggled on in iOS Settings -> CodePill -> Live Activities.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .alert("Dynamic Island", isPresented: $showIslandAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(islandTestResult)
             }
             .navigationTitle("CodePill Settings")
             .navigationBarTitleDisplayMode(.inline)

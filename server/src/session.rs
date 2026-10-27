@@ -49,23 +49,218 @@ impl SessionManager {
         self.broadcast_tx.subscribe()
     }
 
-    pub async fn list_conversations(&self) -> Vec<ConversationSummary> {
-        let convs = self.conversations.read().await;
-        let mut list: Vec<ConversationSummary> = convs
-            .values()
-            .map(|c| ConversationSummary {
-                id: c.id.clone(),
-                title: c.title.clone(),
-                updated_at: c.updated_at.clone(),
-                message_count: c.messages.len(),
-            })
-            .collect();
+    async fn fetch_antigravity_summaries() -> Vec<ConversationSummary> {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+        let db_path = format!("{}/.gemini/antigravity-cli/conversation_summaries.db", home);
+        if !std::path::Path::new(&db_path).exists() {
+            return Vec::new();
+        }
 
+        let cmd = tokio::process::Command::new("sqlite3")
+            .arg(&db_path)
+            .arg("-json")
+            .arg("SELECT conversation_id, title, step_count, last_modified_time FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 60;")
+            .output()
+            .await;
+
+        if let Ok(out) = cmd {
+            if out.status.success() {
+                if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
+                    if let Some(arr) = val.as_array() {
+                        return arr.iter().filter_map(|item| {
+                            let id = item.get("conversation_id")?.as_str()?.to_string();
+                            let title = item.get("title")?.as_str().unwrap_or("Session").to_string();
+                            let steps = item.get("step_count")?.as_u64().unwrap_or(0) as usize;
+                            let updated = item.get("last_modified_time")?.as_str().unwrap_or("").to_string();
+                            Some(ConversationSummary {
+                                id,
+                                title: if title.is_empty() { "Session".to_string() } else { title },
+                                updated_at: updated,
+                                message_count: steps,
+                            })
+                        }).collect();
+                    }
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    async fn load_antigravity_transcript(conv_id: &str) -> Vec<StoredMessage> {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+        let path = format!("{}/.gemini/antigravity-cli/brain/{}/.system_generated/logs/transcript.jsonl", home, conv_id);
+        let Ok(file) = tokio::fs::File::open(&path).await else {
+            return Vec::new();
+        };
+
+        use tokio::io::AsyncBufReadExt;
+        let mut reader = tokio::io::BufReader::new(file).lines();
+        let mut messages: Vec<StoredMessage> = Vec::new();
+        let mut pending_tools: Vec<StoredToolCall> = Vec::new();
+
+        while let Ok(Some(line)) = reader.next_line().await {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
+
+            let step_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let created_at = val.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+            match step_type {
+                "USER_INPUT" => {
+                    let raw_content = val.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                    let clean_text = if let Some(start) = raw_content.find("<USER_REQUEST>") {
+                        let after_start = &raw_content[start + 14..];
+                        if let Some(end) = after_start.find("</USER_REQUEST>") {
+                            after_start[..end].trim().to_string()
+                        } else {
+                            raw_content.trim().to_string()
+                        }
+                    } else {
+                        raw_content.trim().to_string()
+                    };
+
+                    if !clean_text.is_empty() {
+                        messages.push(StoredMessage {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            role: "user".to_string(),
+                            text: clean_text,
+                            tool_calls: Vec::new(),
+                            attachments: Vec::new(),
+                            timestamp: created_at,
+                        });
+                    }
+                }
+                "PLANNER_RESPONSE" => {
+                    if let Some(tool_calls_arr) = val.get("tool_calls").and_then(|v| v.as_array()) {
+                        for t in tool_calls_arr {
+                            let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("tool").to_string();
+                            let args = t.get("args").cloned();
+                            let summary = if let Some(ref a) = args {
+                                if let Some(cmd) = a.get("CommandLine").and_then(|c| c.as_str()) {
+                                    format!("Run: {}", truncate(cmd.trim_matches('"'), 30))
+                                } else if let Some(p) = a.get("Path").and_then(|p| p.as_str()) {
+                                    format!("File: {}", truncate(p.trim_matches('"'), 30))
+                                } else {
+                                    name.clone()
+                                }
+                            } else {
+                                name.clone()
+                            };
+
+                            pending_tools.push(StoredToolCall {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                name,
+                                summary,
+                                parameters: args,
+                                output: None,
+                                is_running: false,
+                                is_success: true,
+                                duration_seconds: None,
+                            });
+                        }
+                    }
+
+                    if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                        let tools = std::mem::take(&mut pending_tools);
+                        messages.push(StoredMessage {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            role: "assistant".to_string(),
+                            text: content.to_string(),
+                            tool_calls: tools,
+                            attachments: Vec::new(),
+                            timestamp: created_at,
+                        });
+                    }
+                }
+                "GENERIC" => {
+                    if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                        if let Some(last_tool) = pending_tools.last_mut() {
+                            last_tool.output = Some(content.to_string());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if !pending_tools.is_empty() {
+            let tools = std::mem::take(&mut pending_tools);
+            messages.push(StoredMessage {
+                id: uuid::Uuid::new_v4().to_string(),
+                role: "assistant".to_string(),
+                text: String::new(),
+                tool_calls: tools,
+                attachments: Vec::new(),
+                timestamp: chrono_or_simple_time(),
+            });
+        }
+
+        messages
+    }
+
+    pub async fn list_conversations(&self) -> Vec<ConversationSummary> {
+        let mut map: HashMap<String, ConversationSummary> = HashMap::new();
+
+        // 1. Sync directly from Antigravity CLI's SQLite database
+        let historical = Self::fetch_antigravity_summaries().await;
+        for h in historical {
+            map.insert(h.id.clone(), h);
+        }
+
+        // 2. Overlay active in-memory conversations
+        let convs = self.conversations.read().await;
+        for c in convs.values() {
+            map.insert(
+                c.id.clone(),
+                ConversationSummary {
+                    id: c.id.clone(),
+                    title: c.title.clone(),
+                    updated_at: c.updated_at.clone(),
+                    message_count: if c.messages.is_empty() {
+                        map.get(&c.id).map(|existing| existing.message_count).unwrap_or(0)
+                    } else {
+                        c.messages.len()
+                    },
+                },
+            );
+        }
+
+        let mut list: Vec<ConversationSummary> = map.into_values().collect();
         list.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         list
     }
 
     pub async fn get_conversation(&self, id: &str) -> Option<ConversationState> {
+        {
+            let convs = self.conversations.read().await;
+            if let Some(c) = convs.get(id) {
+                if !c.messages.is_empty() {
+                    return Some(c.clone());
+                }
+            }
+        }
+
+        // Dynamically load transcript from Antigravity CLI brain if not cached in memory
+        let msgs = Self::load_antigravity_transcript(id).await;
+        if !msgs.is_empty() {
+            let mut convs = self.conversations.write().await;
+            let conv = convs.entry(id.to_string()).or_insert_with(|| ConversationState {
+                id: id.to_string(),
+                title: msgs.first().map(|m| truncate(&m.text, 30)).unwrap_or_else(|| "Session".to_string()),
+                messages: Vec::new(),
+                updated_at: chrono_or_simple_time(),
+                is_busy: false,
+                current_island_state: None,
+            });
+            conv.messages = msgs;
+            return Some(conv.clone());
+        }
+
         let convs = self.conversations.read().await;
         convs.get(id).cloned()
     }

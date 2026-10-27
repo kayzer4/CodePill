@@ -437,10 +437,16 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
 
     // MARK: - ActivityKit (Dynamic Island)
 
-    private func startDynamicIsland(prompt: String, projectName: String) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            print("[CodePill] Live Activities not enabled on device")
-            return
+    @discardableResult
+    public func startDynamicIsland(prompt: String, projectName: String = "CodePill") -> (Bool, String) {
+        let auth = ActivityAuthorizationInfo()
+        print("[CodePill] Live Activities enabled check: \(auth.areActivitiesEnabled)")
+
+        // Clean up any old activities so we don't hit iOS per-app limit
+        for old in Activity<CodePillAttributes>.activities {
+            Task {
+                await old.end(nil, dismissalPolicy: .immediate)
+            }
         }
 
         let attributes = CodePillAttributes(
@@ -448,23 +454,25 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
             promptSummary: String(prompt.prefix(40))
         )
         let initialContent = CodePillAttributes.ContentState(
-            status: "Thinking",
+            status: "Running",
             currentFile: nil,
-            stepDescription: "Starting turn...",
+            stepDescription: prompt,
             isBusy: true,
             needsApproval: false
         )
 
         do {
-            // Using pushType: nil so Dynamic Island works without paid developer push entitlements!
-            currentActivity = try Activity.request(
+            let activity = try Activity.request(
                 attributes: attributes,
                 content: .init(state: initialContent, staleDate: nil),
                 pushType: nil
             )
-            print("[CodePill] LiveActivity successfully started for Dynamic Island!")
+            self.currentActivity = activity
+            print("[CodePill] LiveActivity successfully started for Dynamic Island! ID: \(activity.id)")
+            return (true, "Dynamic Island is active!")
         } catch {
             print("[CodePill] LiveActivity start failed: \(error)")
+            return (false, error.localizedDescription)
         }
     }
 
