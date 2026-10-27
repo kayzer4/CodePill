@@ -24,8 +24,8 @@ pub async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    ws.max_message_size(64 * 1024 * 1024)
-        .max_frame_size(16 * 1024 * 1024)
+    ws.max_message_size(256 * 1024 * 1024)
+        .max_frame_size(64 * 1024 * 1024)
         .on_upgrade(move |socket| handle_socket(socket, state, addr))
 }
 
@@ -39,8 +39,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
 
     // Task forwarding server messages to WebSocket client
     let send_task = tokio::spawn(async move {
+        let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(10));
         loop {
             tokio::select! {
+                _ = ping_interval.tick() => {
+                    if ws_sender.send(Message::Ping(vec![].into())).await.is_err() {
+                        break;
+                    }
+                }
                 // Direct responses to this specific client
                 Some(msg) = direct_rx.recv() => {
                     if let Ok(json) = serde_json::to_string(&msg) {

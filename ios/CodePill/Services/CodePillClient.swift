@@ -33,7 +33,11 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     private var session: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
     private var currentActivity: Activity<CodePillAttributes>?
-    private var activeConversationId: String?
+    @Published public var activeConversationId: String? {
+        didSet {
+            UserDefaults.standard.set(activeConversationId, forKey: "codepill_active_conversation_id")
+        }
+    }
     private var pingTimer: Timer?
     private var isExplicitDisconnect: Bool = false
 
@@ -71,6 +75,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         self.host = UserDefaults.standard.string(forKey: "codepill_host") ?? "100.120.17.25"
         let savedPort = UserDefaults.standard.integer(forKey: "codepill_port")
         self.port = savedPort > 0 ? savedPort : 44321
+        self.activeConversationId = UserDefaults.standard.string(forKey: "codepill_active_conversation_id")
         super.init()
 
         NotificationCenter.default.addObserver(
@@ -82,10 +87,21 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     }
 
     @objc private func handleForeground() {
-        if !isConnected {
+        print("[CodePill] App entered foreground. Verifying connection...")
+        if !isConnected || webSocketTask == nil {
             connect()
-        } else if let convId = activeConversationId {
-            sendSync(conversationId: convId)
+        } else {
+            webSocketTask?.sendPing { [weak self] error in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    if error != nil {
+                        print("[CodePill] Socket was stale on foreground, reconnecting...")
+                        self.connect()
+                    } else if let convId = self.activeConversationId {
+                        self.sendSync(conversationId: convId)
+                    }
+                }
+            }
         }
     }
 
@@ -109,7 +125,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         configuration.timeoutIntervalForRequest = 30
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
         webSocketTask = session?.webSocketTask(with: wsURL)
-        webSocketTask?.maximumMessageSize = 64 * 1024 * 1024 // Allow up to 64MB for large conversation histories
+        webSocketTask?.maximumMessageSize = 256 * 1024 * 1024 // 256 MB buffer for gigantic conversation histories
         webSocketTask?.resume()
 
         listen()
@@ -187,8 +203,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
 
     private func startHeartbeat() {
         pingTimer?.invalidate()
-        // Ping every 10 seconds to keep TCP NAT table alive
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 8.0, repeats: true) { [weak self] _ in
             guard let self = self, let task = self.webSocketTask, self.isConnected else { return }
             task.sendPing { error in
                 if let error = error {
@@ -200,6 +215,8 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
                 }
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.pingTimer = timer
     }
 
     private func scheduleReconnect() {
