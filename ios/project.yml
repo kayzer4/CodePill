@@ -22,6 +22,9 @@ targets:
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
         NSLocalNetworkUsageDescription: "CodePill connects to your local Arch Linux server for Antigravity coding."
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
     dependencies:
       - target: CodePillWidget
     settings:
