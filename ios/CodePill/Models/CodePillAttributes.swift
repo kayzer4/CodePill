@@ -4,7 +4,7 @@ import Foundation
 /// ActivityAttributes defining the static and dynamic state for Dynamic Island
 public struct CodePillAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
-        /// Current status: "Thinking", "Editing file", "Running tests", "Done"
+        /// Current status: "Thinking", "Writing code", "Running tool", "Done"
         public var status: String
         /// Target file being edited, e.g. "main.rs"
         public var currentFile: String?

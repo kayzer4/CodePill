@@ -7,7 +7,7 @@ public struct CodePillWidgetLiveActivity: Widget {
 
     public var body: some WidgetConfiguration {
         ActivityConfiguration(for: CodePillAttributes.self) { context in
-            // Lock Screen / Banner view
+            // Lock Screen Banner / Notification view
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label(context.attributes.projectName, systemImage: "terminal.fill")
@@ -35,10 +35,10 @@ public struct CodePillWidgetLiveActivity: Widget {
             .activityBackgroundTint(Color.black.opacity(0.85))
         } dynamicIsland: { context in
             DynamicIsland {
-                // Expanded UI (When long pressing the Dynamic Island)
+                // Expanded UI (When holding or long pressing the Dynamic Island)
                 DynamicIslandExpandedRegion(.leading) {
                     HStack {
-                        Image(systemName: "cpu.fill")
+                        Image(systemName: "pill.fill")
                             .foregroundStyle(.purple)
                         Text(context.attributes.projectName)
                             .font(.subheadline.bold())
@@ -89,9 +89,9 @@ public struct CodePillWidgetLiveActivity: Widget {
                 // Dynamic Island compact right
                 Text(context.state.status)
                     .font(.caption2.bold())
-                    .foregroundStyle(context.state.isBusy ? .cyan : .green)
+                    .foregroundStyle(context.state.isBusy ? .orange : .green)
             } minimal: {
-                // Minimal icon when another app is also on the island
+                // Minimal single icon
                 Image(systemName: "pill.fill")
                     .foregroundStyle(.purple)
             }
