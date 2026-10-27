@@ -7,7 +7,7 @@ public struct ToolCallBadge: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.easeInOut(duration: 0.15)) {
                     isExpanded.toggle()
                 }
             } label: {
@@ -24,7 +24,7 @@ public struct ToolCallBadge: View {
 
                     Text(item.summary)
                         .font(.caption.monospaced())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
 
                     Spacer()
@@ -33,9 +33,10 @@ public struct ToolCallBadge: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .liquidGlass(cornerRadius: 12)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color(UIColor.tertiarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -43,10 +44,11 @@ public struct ToolCallBadge: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(output)
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.white.opacity(0.85))
-                        .padding(10)
+                        .foregroundStyle(.secondary)
+                        .padding(8)
                 }
-                .liquidGlass(cornerRadius: 10, glowColor: .clear)
+                .background(Color.black.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
     }

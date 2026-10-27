@@ -8,14 +8,11 @@ public struct MessageRow: View {
         HStack(alignment: .top, spacing: 10) {
             if message.role == .assistant {
                 Image(systemName: "pill.fill")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.purple)
-                    .padding(8)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .overlay(Circle().stroke(Color.purple.opacity(0.4), lineWidth: 1))
-                    )
+                    .padding(6)
+                    .background(Color.purple.opacity(0.15))
+                    .clipShape(Circle())
             }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
@@ -35,7 +32,7 @@ public struct MessageRow: View {
                             Button {
                                 rollback()
                             } label: {
-                                Image(systemName: "arrow.uturn.backward.circle")
+                                Image(systemName: "arrow.uturn.backward.circle.fill")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -48,22 +45,11 @@ public struct MessageRow: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .background(bubbleBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .strokeBorder(
-                                        LinearGradient(
-                                            stops: [
-                                                .init(color: .white.opacity(message.role == .user ? 0.35 : 0.2), location: 0),
-                                                .init(color: .clear, location: 0.8)
-                                            ],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        lineWidth: 1
-                                    )
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
                             )
-                            .shadow(color: message.role == .user ? Color.purple.opacity(0.2) : .clear, radius: 8, y: 3)
                     }
                 }
             }
@@ -71,12 +57,12 @@ public struct MessageRow: View {
             if message.role == .user {
                 Image(systemName: "person.crop.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.purple.opacity(0.8))
-                    .padding(8)
+                    .foregroundStyle(.secondary)
+                    .padding(6)
             }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
     }
 
     private var textColor: Color {
@@ -91,14 +77,9 @@ public struct MessageRow: View {
     private var bubbleBackground: some View {
         switch message.role {
         case .user:
-            LinearGradient(
-                colors: [Color.purple.opacity(0.75), Color.indigo.opacity(0.85)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color.purple
         case .assistant:
-            Color.black.opacity(0.25)
-                .background(.ultraThinMaterial)
+            Color(UIColor.secondarySystemBackground)
         case .system:
             Color.clear
         }

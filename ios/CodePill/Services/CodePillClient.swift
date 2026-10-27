@@ -18,7 +18,7 @@ public protocol CodePillClientDelegate: AnyObject {
 }
 
 @MainActor
-public final class CodePillClient: NSObject, ObservableObject {
+public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
     public weak var delegate: CodePillClientDelegate?
 
     @Published public var isConnected: Bool = false
@@ -34,16 +34,14 @@ public final class CodePillClient: NSObject, ObservableObject {
     private var currentActivity: Activity<CodePillAttributes>?
     private var activeConversationId: String?
     private var pingTimer: Timer?
-    private var reconnectWorkItem: DispatchWorkItem?
+    private var isExplicitDisconnect: Bool = false
 
     public override init() {
         self.host = UserDefaults.standard.string(forKey: "codepill_host") ?? "127.0.0.1"
         let savedPort = UserDefaults.standard.integer(forKey: "codepill_port")
-        // Default to new inconspicuous port 44321
         self.port = savedPort > 0 ? savedPort : 44321
         super.init()
 
-        // Reconnect and sync when returning to foreground
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleForeground),
@@ -71,61 +69,81 @@ public final class CodePillClient: NSObject, ObservableObject {
     // MARK: - Connection Management
 
     public func connect() {
-        reconnectWorkItem?.cancel()
-        disconnect()
+        isExplicitDisconnect = false
+        cleanUpSocket()
 
         let configuration = URLSessionConfiguration.default
-        configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 30
-        session = URLSession(configuration: configuration, delegate: nil, delegateQueue: .main)
+        session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
         webSocketTask = session?.webSocketTask(with: wsURL)
         webSocketTask?.resume()
 
-        startHeartbeat()
         listen()
-
-        // Initial handshake ping to confirm connection
-        webSocketTask?.sendPing { [weak self] error in
-            Task { @MainActor in
-                if error == nil {
-                    self?.isConnected = true
-                    self?.delegate?.clientDidConnect()
-                    if let convId = self?.activeConversationId {
-                        self?.sendSync(conversationId: convId)
-                    }
-                    self?.requestConversationsList()
-                } else {
-                    self?.scheduleReconnect()
-                }
-            }
-        }
     }
 
     public func disconnect() {
+        isExplicitDisconnect = true
+        cleanUpSocket()
+        isConnected = false
+    }
+
+    private func cleanUpSocket() {
         pingTimer?.invalidate()
         pingTimer = nil
-        reconnectWorkItem?.cancel()
-        reconnectWorkItem = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         session?.invalidateAndCancel()
         session = nil
-        isConnected = false
+    }
+
+    // MARK: - URLSessionWebSocketDelegate
+
+    public nonisolated func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        Task { @MainActor in
+            print("[CodePill] WebSocket officially connected!")
+            self.isConnected = true
+            self.delegate?.clientDidConnect()
+            self.startHeartbeat()
+
+            if let convId = self.activeConversationId {
+                self.sendSync(conversationId: convId)
+            }
+            self.requestConversationsList()
+        }
+    }
+
+    public nonisolated func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        Task { @MainActor in
+            print("[CodePill] WebSocket closed by server: \(closeCode)")
+            self.isConnected = false
+            self.pingTimer?.invalidate()
+            self.pingTimer = nil
+            if !self.isExplicitDisconnect {
+                self.scheduleReconnect()
+            }
+        }
     }
 
     private func startHeartbeat() {
         pingTimer?.invalidate()
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
-            guard let self = self, let task = self.webSocketTask else { return }
+        // Ping every 10 seconds to keep TCP NAT table alive
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            guard let self = self, let task = self.webSocketTask, self.isConnected else { return }
             task.sendPing { error in
-                Task { @MainActor in
-                    if let error = error {
-                        print("[CodePill] Ping error: \(error)")
+                if let error = error {
+                    print("[CodePill] Ping failed: \(error)")
+                    Task { @MainActor in
                         self.isConnected = false
                         self.scheduleReconnect()
-                    } else if !self.isConnected {
-                        self.isConnected = true
-                        self.delegate?.clientDidConnect()
                     }
                 }
             }
@@ -133,13 +151,12 @@ public final class CodePillClient: NSObject, ObservableObject {
     }
 
     private func scheduleReconnect() {
-        guard reconnectWorkItem == nil else { return }
-        let item = DispatchWorkItem { [weak self] in
-            self?.reconnectWorkItem = nil
-            self?.connect()
+        guard !isExplicitDisconnect else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self = self, !self.isConnected, !self.isExplicitDisconnect else { return }
+            print("[CodePill] Auto-reconnecting...")
+            self.connect()
         }
-        reconnectWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: item)
     }
 
     // MARK: - Outgoing Messages
@@ -232,7 +249,9 @@ public final class CodePillClient: NSObject, ObservableObject {
                     print("[CodePill] WebSocket receive error: \(error)")
                     self.isConnected = false
                     self.delegate?.clientDidDisconnect(error: error)
-                    self.scheduleReconnect()
+                    if !self.isExplicitDisconnect {
+                        self.scheduleReconnect()
+                    }
                 }
             }
         }
@@ -381,7 +400,10 @@ public final class CodePillClient: NSObject, ObservableObject {
     // MARK: - ActivityKit (Dynamic Island)
 
     private func startDynamicIsland(prompt: String, projectName: String) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            print("[CodePill] Live Activities not enabled on device")
+            return
+        }
 
         let attributes = CodePillAttributes(
             projectName: projectName,
@@ -396,22 +418,15 @@ public final class CodePillClient: NSObject, ObservableObject {
         )
 
         do {
+            // Using pushType: nil so Dynamic Island works without paid developer push entitlements!
             currentActivity = try Activity.request(
                 attributes: attributes,
                 content: .init(state: initialContent, staleDate: nil),
-                pushType: .token
+                pushType: nil
             )
-
-            Task {
-                if let activity = currentActivity {
-                    for await pushToken in activity.pushTokenUpdates {
-                        let tokenStr = pushToken.map { String(format: "%02x", $0) }.joined()
-                        self.sendPushToken(tokenStr, activityId: activity.id)
-                    }
-                }
-            }
+            print("[CodePill] LiveActivity successfully started for Dynamic Island!")
         } catch {
-            print("[CodePill] LiveActivity error: \(error)")
+            print("[CodePill] LiveActivity start failed: \(error)")
         }
     }
 
@@ -435,17 +450,6 @@ public final class CodePillClient: NSObject, ObservableObject {
             await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .default)
             self.currentActivity = nil
         }
-    }
-
-    private func sendPushToken(_ token: String, activityId: String) {
-        let envelope: [String: Any] = [
-            "type": "register_live_activity",
-            "payload": [
-                "activity_id": activityId,
-                "push_token": token
-            ]
-        ]
-        sendJson(envelope)
     }
 
     // MARK: - REST API Helpers

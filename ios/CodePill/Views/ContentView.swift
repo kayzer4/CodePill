@@ -11,14 +11,15 @@ public struct ContentView: View {
 
     public var body: some View {
         ZStack {
-            // Ambient Liquid Neon Glass Background
-            LiquidAmbientBackground()
+            // Strict Clean Dark Background
+            Color(UIColor.systemBackground)
+                .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Floating Glass Header Capsule
-                liquidHeaderBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                // Header Bar
+                strictHeaderBar
+                    .padding(.horizontal, 14)
+                    .padding(.top, 6)
                     .padding(.bottom, 6)
 
                 // Dynamic Island mirror preview when busy
@@ -31,7 +32,7 @@ public struct ContentView: View {
                 // Chat stream
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 14) {
+                        LazyVStack(spacing: 12) {
                             ForEach(viewModel.messages) { msg in
                                 MessageRow(
                                     message: msg,
@@ -42,7 +43,7 @@ public struct ContentView: View {
                                 .id(msg.id)
                             }
                         }
-                        .padding(.vertical, 14)
+                        .padding(.vertical, 12)
                     }
                     .onChange(of: viewModel.messages.last?.text) { _ in
                         if let last = viewModel.messages.last {
@@ -51,17 +52,17 @@ public struct ContentView: View {
                     }
                     .onChange(of: viewModel.messages.count) { _ in
                         if let last = viewModel.messages.last {
-                            withAnimation(.spring(response: 0.3)) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
                     }
                 }
 
-                // Floating Liquid Glass Input Bar
-                liquidInputBar
+                // Input Bar
+                strictInputBar
                     .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 8)
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -75,35 +76,31 @@ public struct ContentView: View {
         }
     }
 
-    private var liquidHeaderBar: some View {
+    private var strictHeaderBar: some View {
         HStack(spacing: 12) {
-            // Conversations / Chat Switcher Button
             Button {
                 viewModel.client.requestConversationsList()
                 showConversations = true
             } label: {
-                Image(systemName: "bubble.left.and.bubble.right.fill")
+                Image(systemName: "bubble.left.and.bubble.right")
                     .font(.subheadline)
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(.primary)
             }
 
             Spacer()
 
-            // Center Branding & Connection Dot
             HStack(spacing: 6) {
                 Circle()
                     .fill(viewModel.isConnected ? Color.green : Color.red)
                     .frame(width: 8, height: 8)
-                    .shadow(color: viewModel.isConnected ? Color.green.opacity(0.8) : Color.red.opacity(0.8), radius: 4)
 
                 Text(viewModel.isConnected ? "CodePill (Live)" : "CodePill (Offline)")
-                    .font(.headline.monospaced())
-                    .foregroundStyle(.white)
+                    .font(.subheadline.bold().monospaced())
+                    .foregroundStyle(.primary)
             }
 
             Spacer()
 
-            // Rollback last turn button
             Button {
                 viewModel.rollbackTurn()
             } label: {
@@ -113,27 +110,27 @@ public struct ContentView: View {
             }
             .disabled(viewModel.isExecuting)
 
-            // Settings Button
             Button {
                 showSettings = true
             } label: {
-                Image(systemName: "gearshape.fill")
+                Image(systemName: "gearshape")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .liquidGlass(cornerRadius: 24, glowColor: Color.purple.opacity(0.18))
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var liquidInputBar: some View {
+    private var strictInputBar: some View {
         HStack(spacing: 10) {
-            TextField("Vibe a prompt, bugfix, or feature...", text: $viewModel.inputText, axis: .vertical)
+            TextField("Message or instruction...", text: $viewModel.inputText, axis: .vertical)
                 .lineLimit(1...5)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .foregroundStyle(.white)
+                .padding(.vertical, 9)
+                .foregroundStyle(.primary)
 
             if viewModel.isExecuting {
                 Button {
@@ -142,7 +139,6 @@ public struct ContentView: View {
                     Image(systemName: "stop.circle.fill")
                         .font(.title2)
                         .foregroundStyle(.red)
-                        .shadow(color: .red.opacity(0.5), radius: 6)
                 }
                 .padding(.trailing, 6)
             } else {
@@ -151,13 +147,17 @@ public struct ContentView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)
-                        .foregroundColor(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.white.opacity(0.2) : Color.purple)
-                        .shadow(color: viewModel.inputText.isEmpty ? .clear : Color.purple.opacity(0.6), radius: 8)
+                        .foregroundColor(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.secondary.opacity(0.4) : Color.purple)
                 }
                 .disabled(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .padding(.trailing, 6)
             }
         }
-        .liquidGlass(cornerRadius: 26, glowColor: Color.purple.opacity(0.2), isHighlighted: !viewModel.inputText.isEmpty)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
     }
 }
