@@ -126,6 +126,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 })
                                 .await;
                         }
+                        ClientMessage::DeleteConversation { conversation_id } => {
+                            info!("Deleting conversation: {}", conversation_id);
+                            state.session_mgr.delete_conversation(&conversation_id).await;
+                            let list = state.session_mgr.list_conversations().await;
+                            let _ = direct_tx
+                                .send(ServerMessage::ConversationsList {
+                                    conversations: list,
+                                })
+                                .await;
+                        }
                         ClientMessage::ActionResponse { action_id, approved } => {
                             info!("Action {} response: {}", action_id, approved);
                         }

@@ -265,6 +265,27 @@ impl SessionManager {
         convs.get(id).cloned()
     }
 
+    pub async fn delete_conversation(&self, id: &str) {
+        {
+            let mut convs = self.conversations.write().await;
+            convs.remove(id);
+        }
+
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+        let db_path = format!("{}/.gemini/antigravity-cli/conversation_summaries.db", home);
+        if std::path::Path::new(&db_path).exists() {
+            let sql = format!("DELETE FROM conversation_summaries WHERE conversation_id = '{}';", id.replace('\'', ""));
+            let _ = tokio::process::Command::new("sqlite3")
+                .arg(&db_path)
+                .arg(&sql)
+                .output()
+                .await;
+        }
+
+        let brain_path = format!("{}/.gemini/antigravity-cli/brain/{}", home, id);
+        let _ = tokio::fs::remove_dir_all(&brain_path).await;
+    }
+
     pub async fn rollback(&self, conversation_id: &str) -> Option<(Vec<StoredMessage>, Option<String>)> {
         let mut convs = self.conversations.write().await;
         if let Some(conv) = convs.get_mut(conversation_id) {

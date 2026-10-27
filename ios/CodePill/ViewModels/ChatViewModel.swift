@@ -170,6 +170,24 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         Haptics.shared.impact(.medium)
     }
 
+    public func deleteConversation(id: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            conversations.removeAll(where: { $0.id == id })
+        }
+        // Remove local cache file
+        let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(id).json")
+        try? FileManager.default.removeItem(at: messagesFile)
+        
+        // If deleting active conversation, start new chat
+        if currentConversationId == id {
+            startNewChat()
+        }
+        
+        client.sendDeleteConversation(conversationId: id)
+        saveCache()
+        Haptics.shared.notify(.warning)
+    }
+
     public func sendMessage() {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }

@@ -7,7 +7,7 @@ public struct HeaderScaleButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.90 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.88 : 1.0)
             .opacity(configuration.isPressed ? 0.6 : 1.0)
             .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
     }
@@ -31,14 +31,8 @@ public struct ContentView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Header Bar
-                strictHeaderBar
-                    .padding(.horizontal, 14)
-                    .padding(.top, 6)
-                    .padding(.bottom, 4)
-
-                // Main Screen Status Bar (Clean connection & execution indicator)
-                mainStatusBanner
+                // Native Apple iOS Navigation Header
+                nativeHeaderBar
 
                 // Dynamic Island mirror preview when busy
                 if let island = viewModel.currentIslandState {
@@ -144,93 +138,103 @@ public struct ContentView: View {
         }
     }
 
-    private var strictHeaderBar: some View {
-        HStack(spacing: 14) {
-            Button {
-                viewModel.client.requestConversationsList()
-                DispatchQueue.main.async {
-                    showConversations = true
+    private var nativeHeaderBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                // Conversations list button
+                Button {
+                    viewModel.client.requestConversationsList()
+                    DispatchQueue.main.async {
+                        showConversations = true
+                    }
+                } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 36, height: 36)
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .clipShape(Circle())
                 }
-            } label: {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .frame(width: 34, height: 34)
-                    .background(Color(UIColor.tertiarySystemBackground))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(HeaderScaleButtonStyle())
+                .buttonStyle(HeaderScaleButtonStyle())
 
-            Spacer()
+                Spacer()
 
-            Text("CodePill")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.primary)
+                // Center Title & Status subtitle
+                VStack(spacing: 2) {
+                    Text("CodePill")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.primary)
 
-            Spacer()
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(statusIndicatorColor)
+                            .frame(width: 6, height: 6)
 
-            Button {
-                viewModel.rollbackTurn()
-            } label: {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.caption.bold())
-                    .foregroundColor(viewModel.isExecuting ? Color.secondary : Color.orange)
-                    .frame(width: 34, height: 34)
-                    .background(Color(UIColor.tertiarySystemBackground))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(HeaderScaleButtonStyle())
-            .disabled(viewModel.isExecuting)
+                        Text(statusIndicatorText)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
 
-            Button {
-                DispatchQueue.main.async {
-                    showSettings = true
+                        if viewModel.isExecuting {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .scaleEffect(0.5)
+                        }
+                    }
                 }
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 34, height: 34)
-                    .background(Color(UIColor.tertiarySystemBackground))
-                    .clipShape(Circle())
+
+                Spacer()
+
+                // Actions: New Chat, Rollback, Settings
+                HStack(spacing: 8) {
+                    Button {
+                        viewModel.startNewChat()
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(width: 34, height: 34)
+                            .background(Color(UIColor.secondarySystemBackground))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(HeaderScaleButtonStyle())
+
+                    Button {
+                        viewModel.rollbackTurn()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(viewModel.isExecuting ? Color.secondary.opacity(0.3) : Color.orange)
+                            .frame(width: 34, height: 34)
+                            .background(Color(UIColor.secondarySystemBackground))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(HeaderScaleButtonStyle())
+                    .disabled(viewModel.isExecuting)
+
+                    Button {
+                        DispatchQueue.main.async {
+                            showSettings = true
+                        }
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, height: 34)
+                            .background(Color(UIColor.secondarySystemBackground))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(HeaderScaleButtonStyle())
+                }
             }
-            .buttonStyle(HeaderScaleButtonStyle())
+            .padding(.horizontal, 14)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+            .background(Color(UIColor.systemBackground).opacity(0.96))
+
+            Divider()
+                .opacity(0.35)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(Color(UIColor.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private var mainStatusBanner: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(statusIndicatorColor)
-                .frame(width: 8, height: 8)
-
-            Text(statusIndicatorText)
-                .font(.caption.bold().monospaced())
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            if viewModel.isExecuting {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .scaleEffect(0.65)
-                    .tint(Color.accentColor)
-            } else {
-                Text(viewModel.selectedModel.replacingOccurrences(of: "gemini-", with: ""))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .background(Color(UIColor.secondarySystemBackground).opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .padding(.horizontal, 14)
-        .padding(.top, 4)
     }
 
     private var statusIndicatorColor: Color {
@@ -249,9 +253,9 @@ public struct ContentView: View {
         }
         if viewModel.isExecuting {
             if let file = viewModel.currentIslandState?.currentFile {
-                return "Running: \(file)"
+                return file
             }
-            return viewModel.currentIslandState?.status ?? "Thinking..."
+            return viewModel.currentIslandState?.status ?? "Thinking"
         }
         return "Connected"
     }

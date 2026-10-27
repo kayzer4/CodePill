@@ -220,6 +220,14 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         sendJson(envelope)
     }
 
+    public func sendDeleteConversation(conversationId: String) {
+        let envelope: [String: Any] = [
+            "type": "delete_conversation",
+            "payload": ["conversation_id": conversationId]
+        ]
+        sendJson(envelope)
+    }
+
     public func cancelTurn() {
         let envelope: [String: Any] = ["type": "cancel"]
         sendJson(envelope)

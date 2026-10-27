@@ -103,6 +103,12 @@ pub enum ClientMessage {
     #[serde(rename = "cancel")]
     Cancel,
 
+    /// Delete a conversation
+    #[serde(rename = "delete_conversation")]
+    DeleteConversation {
+        conversation_id: String,
+    },
+
     /// Register APNs Live Activity push token for Dynamic Island
     #[serde(rename = "register_live_activity")]
     RegisterLiveActivity {

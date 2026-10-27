@@ -16,12 +16,20 @@ targets:
     platform: iOS
     sources:
       - path: CodePill
+    info:
+      path: CodePill/App/Info.plist
+      properties:
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
     dependencies:
       - target: CodePillWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.codepill.app
         INFOPLIST_FILE: CodePill/App/Info.plist
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
+        INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates: YES
+        GENERATE_INFOPLIST: NO
         TARGETED_DEVICE_FAMILY: "1"
 
   CodePillWidget:
@@ -30,8 +38,16 @@ targets:
     sources:
       - path: CodePillWidget
       - path: CodePill/Models/CodePillAttributes.swift
+    info:
+      path: CodePillWidget/Info.plist
+      properties:
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.codepill.app.widget
         INFOPLIST_FILE: CodePillWidget/Info.plist
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
+        INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates: YES
+        GENERATE_INFOPLIST: NO
         TARGETED_DEVICE_FAMILY: "1"

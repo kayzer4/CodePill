@@ -4,6 +4,29 @@ public struct ConversationsSheet: View {
     @ObservedObject public var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
 
+    @State private var searchText: String = ""
+    @State private var sortNewestFirst: Bool = true
+
+    private var filteredConversations: [ConversationItem] {
+        var list = viewModel.conversations
+
+        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            list = list.filter {
+                $0.title.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+
+        list.sort { a, b in
+            if sortNewestFirst {
+                return a.updated_at > b.updated_at
+            } else {
+                return a.updated_at < b.updated_at
+            }
+        }
+
+        return list
+    }
+
     public var body: some View {
         NavigationStack {
             List {
@@ -22,20 +45,23 @@ public struct ConversationsSheet: View {
                     }
                 }
 
-                Section("Antigravity & CodePill Sessions") {
-                    if viewModel.conversations.isEmpty {
+                Section {
+                    if filteredConversations.isEmpty {
                         VStack(alignment: .center, spacing: 8) {
-                            Text("No sessions found")
+                            Text(searchText.isEmpty ? "No sessions found" : "No matches for \"\(searchText)\"")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Button("Refresh from Server") {
-                                viewModel.client.requestConversationsList()
+                            if searchText.isEmpty {
+                                Button("Refresh from Server") {
+                                    viewModel.client.requestConversationsList()
+                                }
+                                .font(.caption.bold())
                             }
-                            .font(.caption.bold())
                         }
                         .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .center)
                     } else {
-                        ForEach(viewModel.conversations) { item in
+                        ForEach(filteredConversations) { item in
                             Button {
                                 viewModel.selectConversation(item)
                                 dismiss()
@@ -78,9 +104,19 @@ public struct ConversationsSheet: View {
                                 .padding(.vertical, 2)
                             }
                         }
+                        .onDelete(perform: deleteItems)
+                    }
+                } header: {
+                    HStack {
+                        Text("Antigravity & CodePill Sessions")
+                        Spacer()
+                        Text("\(filteredConversations.count)")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
+            .searchable(text: $searchText, prompt: "Search conversations...")
             .navigationTitle("Conversations")
             .navigationBarTitleDisplayMode(.inline)
             .refreshable {
@@ -92,22 +128,37 @@ public struct ConversationsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        viewModel.client.requestConversationsList()
+                        withAnimation {
+                            sortNewestFirst.toggle()
+                        }
                     } label: {
-                        Image(systemName: "arrow.clockwise")
+                        HStack(spacing: 4) {
+                            Image(systemName: sortNewestFirst ? "arrow.down" : "arrow.up")
+                                .font(.caption.bold())
+                            Text(sortNewestFirst ? "Newest" : "Oldest")
+                                .font(.caption)
+                        }
                     }
                 }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         dismiss()
                     }
+                    .font(.body.bold())
                 }
             }
         }
     }
 
+    private func deleteItems(at offsets: IndexSet) {
+        for index in offsets {
+            let item = filteredConversations[index]
+            viewModel.deleteConversation(id: item.id)
+        }
+    }
+
     private func formatDate(_ dateStr: String) -> String {
-        // Simple substring for ISO timestamps e.g. "2026-10-27 08:34" or "2026-10-27T08:34"
         if dateStr.count >= 16 {
             let prefix = String(dateStr.prefix(16))
             return prefix.replacingOccurrences(of: "T", with: " ")
