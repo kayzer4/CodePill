@@ -33,6 +33,8 @@ public final class CodePillClient: NSObject, ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private var currentActivity: Activity<CodePillAttributes>?
     private var activeConversationId: String?
+    private var pingTimer: Timer?
+    private var reconnectWorkItem: DispatchWorkItem?
 
     public override init() {
         self.host = UserDefaults.standard.string(forKey: "codepill_host") ?? "127.0.0.1"
@@ -69,30 +71,75 @@ public final class CodePillClient: NSObject, ObservableObject {
     // MARK: - Connection Management
 
     public func connect() {
+        reconnectWorkItem?.cancel()
         disconnect()
 
         let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = 30
         session = URLSession(configuration: configuration, delegate: nil, delegateQueue: .main)
         webSocketTask = session?.webSocketTask(with: wsURL)
         webSocketTask?.resume()
 
-        self.isConnected = true
-        delegate?.clientDidConnect()
+        startHeartbeat()
         listen()
 
-        // Sync active conversation upon connection
-        if let convId = activeConversationId {
-            sendSync(conversationId: convId)
+        // Initial handshake ping to confirm connection
+        webSocketTask?.sendPing { [weak self] error in
+            Task { @MainActor in
+                if error == nil {
+                    self?.isConnected = true
+                    self?.delegate?.clientDidConnect()
+                    if let convId = self?.activeConversationId {
+                        self?.sendSync(conversationId: convId)
+                    }
+                    self?.requestConversationsList()
+                } else {
+                    self?.scheduleReconnect()
+                }
+            }
         }
-        requestConversationsList()
     }
 
     public func disconnect() {
+        pingTimer?.invalidate()
+        pingTimer = nil
+        reconnectWorkItem?.cancel()
+        reconnectWorkItem = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         session?.invalidateAndCancel()
         session = nil
         isConnected = false
+    }
+
+    private func startHeartbeat() {
+        pingTimer?.invalidate()
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
+            guard let self = self, let task = self.webSocketTask else { return }
+            task.sendPing { error in
+                Task { @MainActor in
+                    if let error = error {
+                        print("[CodePill] Ping error: \(error)")
+                        self.isConnected = false
+                        self.scheduleReconnect()
+                    } else if !self.isConnected {
+                        self.isConnected = true
+                        self.delegate?.clientDidConnect()
+                    }
+                }
+            }
+        }
+    }
+
+    private func scheduleReconnect() {
+        guard reconnectWorkItem == nil else { return }
+        let item = DispatchWorkItem { [weak self] in
+            self?.reconnectWorkItem = nil
+            self?.connect()
+        }
+        reconnectWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: item)
     }
 
     // MARK: - Outgoing Messages
@@ -182,8 +229,10 @@ public final class CodePillClient: NSObject, ObservableObject {
                     self.listen()
 
                 case .failure(let error):
+                    print("[CodePill] WebSocket receive error: \(error)")
                     self.isConnected = false
                     self.delegate?.clientDidDisconnect(error: error)
+                    self.scheduleReconnect()
                 }
             }
         }

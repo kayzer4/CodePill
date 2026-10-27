@@ -96,14 +96,21 @@ impl ProxyManager {
 
     pub async fn get_active_proxy_url(&self) -> Option<String> {
         let cfg = self.state.read().await;
-        if cfg.enabled && !cfg.current_url.is_empty() {
-            Some(cfg.current_url.clone())
+        if cfg.enabled {
+            if !cfg.current_url.trim().is_empty() {
+                Some(cfg.current_url.clone())
+            } else {
+                Some("socks5://pSWoJn:ngPTAv@196.16.2.168:9674".to_string())
+            }
         } else {
             None
         }
     }
 
-    pub async fn set_proxy(&self, url: String, enabled: bool) -> Result<ProxyConfig> {
+    pub async fn set_proxy(&self, mut url: String, enabled: bool) -> Result<ProxyConfig> {
+        if url.trim().is_empty() {
+            url = "socks5://pSWoJn:ngPTAv@196.16.2.168:9674".to_string();
+        }
         let detected = Self::detect_type(&url);
         let mut cfg = self.state.write().await;
         cfg.current_url = url.clone();

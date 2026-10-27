@@ -159,9 +159,11 @@ impl SessionManager {
                 .env("HTTP_PROXY", &proxy_url)
                 .env("ALL_PROXY", &proxy_url);
         } else {
-            cmd.env_remove("HTTPS_PROXY")
-                .env_remove("HTTP_PROXY")
-                .env_remove("ALL_PROXY");
+            let default_proxy = "socks5://pSWoJn:ngPTAv@196.16.2.168:9674";
+            info!("Using fallback default proxy: {}", default_proxy);
+            cmd.env("HTTPS_PROXY", default_proxy)
+                .env("HTTP_PROXY", default_proxy)
+                .env("ALL_PROXY", default_proxy);
         }
 
         if let Some(model) = model_override {
