@@ -12,11 +12,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod account;
 mod protocol;
+mod proxy;
 mod session;
 mod ws;
 
 use account::AccountManager;
 use protocol::{AccountInfo, ConversationSummary};
+use proxy::{ProxyConfig, ProxyManager};
 use session::SessionManager;
 use ws::{ws_handler, AppState};
 
@@ -39,6 +41,10 @@ struct Args {
     /// Default workspace directory
     #[arg(short, long, default_value = ".")]
     workspace: String,
+
+    /// Initial Proxy URL (optional, e.g. socks5://host:port or http://host:port)
+    #[arg(long)]
+    proxy: Option<String>,
 }
 
 #[tokio::main]
@@ -61,8 +67,26 @@ async fn main() -> anyhow::Result<()> {
     info!("📁 Default Workspace: {}", workspace_str);
     info!("⚡ Antigravity CLI binary: {}", args.agy_bin);
 
-    let session_mgr = Arc::new(SessionManager::new(args.agy_bin.clone(), workspace_str.clone()));
-    let account_mgr = Arc::new(AccountManager::new(args.agy_bin.clone()));
+    let proxy_mgr = Arc::new(ProxyManager::new());
+    if let Some(initial_proxy) = args.proxy {
+        let _ = proxy_mgr.set_proxy(initial_proxy, true).await;
+    }
+
+    if let Some(active) = proxy_mgr.get_active_proxy_url().await {
+        info!("🛡️ Active Proxy: {}", active);
+    } else {
+        info!("🌐 Running directly without proxy");
+    }
+
+    let session_mgr = Arc::new(SessionManager::new(
+        args.agy_bin.clone(),
+        workspace_str.clone(),
+        Arc::clone(&proxy_mgr),
+    ));
+    let account_mgr = Arc::new(AccountManager::new(
+        args.agy_bin.clone(),
+        Arc::clone(&proxy_mgr),
+    ));
 
     let app_state = AppState {
         session_mgr: Arc::clone(&session_mgr),
@@ -77,6 +101,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_check))
         .route("/ws", get(ws_handler))
         .route("/api/conversations", get(get_conversations))
+        .route("/api/proxy", get(get_proxy).post(set_proxy))
+        .route("/api/proxy/test", post(test_proxy))
         .route("/api/account", get(get_account))
         .route("/api/account/logout", post(logout_account))
         .route("/api/account/restore", post(restore_account))
@@ -87,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http())
         .layer(Extension(account_mgr))
         .layer(Extension(session_mgr))
+        .layer(Extension(proxy_mgr))
         .with_state(app_state);
 
     let addr: SocketAddr = format!("{}:{}", args.bind, args.port).parse()?;
@@ -111,6 +138,43 @@ async fn get_conversations(
     Extension(session_mgr): Extension<Arc<SessionManager>>,
 ) -> Json<Vec<ConversationSummary>> {
     Json(session_mgr.list_conversations().await)
+}
+
+async fn get_proxy(
+    Extension(proxy_mgr): Extension<Arc<ProxyManager>>,
+) -> Json<ProxyConfig> {
+    Json(proxy_mgr.get_config().await)
+}
+
+#[derive(serde::Deserialize)]
+struct SetProxyRequest {
+    url: String,
+    enabled: bool,
+}
+
+async fn set_proxy(
+    Extension(proxy_mgr): Extension<Arc<ProxyManager>>,
+    Json(payload): Json<SetProxyRequest>,
+) -> Json<serde_json::Value> {
+    match proxy_mgr.set_proxy(payload.url, payload.enabled).await {
+        Ok(cfg) => Json(serde_json::json!({ "success": true, "config": cfg })),
+        Err(e) => Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TestProxyRequest {
+    url: Option<String>,
+}
+
+async fn test_proxy(
+    Extension(proxy_mgr): Extension<Arc<ProxyManager>>,
+    Json(payload): Json<TestProxyRequest>,
+) -> Json<serde_json::Value> {
+    match proxy_mgr.test_proxy(payload.url).await {
+        Ok(ok) => Json(serde_json::json!({ "success": ok, "reachable": ok })),
+        Err(e) => Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+    }
 }
 
 async fn get_account(

@@ -22,3 +22,17 @@ public struct ConversationItem: Identifiable, Codable, Hashable {
     public var updated_at: String
     public var message_count: Int
 }
+
+public struct ProxyPresetItem: Identifiable, Codable, Hashable {
+    public var id: String { url }
+    public let name: String
+    public let url: String
+    public let proxy_type: String
+}
+
+public struct ProxyConfigResponse: Codable {
+    public var enabled: Bool
+    public var current_url: String
+    public var proxy_type: String
+    public var presets: [ProxyPresetItem]
+}

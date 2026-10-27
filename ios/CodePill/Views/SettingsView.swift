@@ -10,6 +10,10 @@ public struct SettingsView: View {
     @State private var accountInfo: AccountInfo?
     @State private var usageText: String = ""
     @State private var availableModels: [ModelItem] = []
+    @State private var proxyConfig: ProxyConfigResponse?
+    @State private var proxyUrlInput: String = ""
+    @State private var proxyEnabled: Bool = true
+    @State private var proxyTestStatus: String? = nil
     @State private var isLoading: Bool = false
 
     public var body: some View {
@@ -32,6 +36,58 @@ public struct SettingsView: View {
                     .tint(.purple)
                 }
 
+                Section("Proxy & Antigravity Bypass") {
+                    Toggle("Enable Proxy", isOn: $proxyEnabled)
+
+                    TextField("Proxy URL (socks5:// or http://)", text: $proxyUrlInput)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .font(.caption.monospaced())
+
+                    if let presets = proxyConfig?.presets, !presets.isEmpty {
+                        Menu("Select from Presets") {
+                            ForEach(presets) { preset in
+                                Button(preset.name) {
+                                    proxyUrlInput = preset.url
+                                }
+                            }
+                        }
+                    }
+
+                    HStack {
+                        Button("Apply Proxy") {
+                            Task {
+                                try? await client.updateProxy(url: proxyUrlInput, enabled: proxyEnabled)
+                                await loadData()
+                            }
+                        }
+                        .tint(.purple)
+
+                        Spacer()
+
+                        Button("Test Connection") {
+                            proxyTestStatus = "Testing..."
+                            Task {
+                                if let ok = try? await client.testProxy(url: proxyUrlInput) {
+                                    proxyTestStatus = ok ? "Reachable" : "Failed"
+                                } else {
+                                    proxyTestStatus = "Failed"
+                                }
+                            }
+                        }
+                    }
+
+                    if let status = proxyTestStatus {
+                        HStack {
+                            Text("Status:")
+                            Spacer()
+                            Text(status)
+                                .foregroundColor(status == "Reachable" ? Color.green : Color.red)
+                                .font(.caption.bold())
+                        }
+                    }
+                }
+
                 Section("Model Selection") {
                     Picker("Active Model", selection: $selectedModel) {
                         if availableModels.isEmpty {
@@ -50,7 +106,7 @@ public struct SettingsView: View {
                             Text("Status")
                             Spacer()
                             Text(account.logged_in ? "Logged In" : "Logged Out")
-                                .foregroundStyle(account.logged_in ? .green : .red)
+                                .foregroundColor(account.logged_in ? Color.green : Color.red)
                         }
 
                         if let email = account.email {
@@ -115,6 +171,13 @@ public struct SettingsView: View {
         accountInfo = try? await client.fetchAccount()
         availableModels = (try? await client.fetchModels()) ?? []
         usageText = (try? await client.fetchUsage()) ?? ""
+
+        if let p = try? await client.fetchProxy() {
+            proxyConfig = p
+            proxyEnabled = p.enabled
+            proxyUrlInput = p.current_url
+        }
+
         isLoading = false
     }
 }

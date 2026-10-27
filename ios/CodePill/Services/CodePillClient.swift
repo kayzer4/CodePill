@@ -435,4 +435,34 @@ public final class CodePillClient: NSObject, ObservableObject {
         }
         return ""
     }
+
+    public func fetchProxy() async throws -> ProxyConfigResponse {
+        let url = baseURL.appendingPathComponent("api/proxy")
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try JSONDecoder().decode(ProxyConfigResponse.self, from: data)
+    }
+
+    public func updateProxy(url: String, enabled: Bool) async throws {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/proxy"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload = ["url": url, "enabled": enabled] as [String : Any]
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        _ = try await URLSession.shared.data(for: req)
+    }
+
+    public func testProxy(url: String? = nil) async throws -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/proxy/test"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var payload: [String: Any] = [:]
+        if let url = url { payload["url"] = url }
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (data, _) = try await URLSession.shared.data(for: req)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let ok = json["reachable"] as? Bool {
+            return ok
+        }
+        return false
+    }
 }

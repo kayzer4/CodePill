@@ -10,6 +10,7 @@ use tracing::{info, warn};
 use crate::protocol::{
     ConversationSummary, DynamicIslandState, ServerMessage, StoredMessage, StoredToolCall,
 };
+use crate::proxy::ProxyManager;
 
 #[derive(Clone, Debug)]
 pub struct ConversationState {
@@ -26,16 +27,18 @@ pub struct SessionManager {
     workspace: String,
     conversations: Arc<RwLock<HashMap<String, ConversationState>>>,
     broadcast_tx: broadcast::Sender<(String, ServerMessage)>,
+    proxy_mgr: Arc<ProxyManager>,
 }
 
 impl SessionManager {
-    pub fn new(agy_binary: String, workspace: String) -> Self {
+    pub fn new(agy_binary: String, workspace: String, proxy_mgr: Arc<ProxyManager>) -> Self {
         let (broadcast_tx, _) = broadcast::channel(500);
         Self {
             agy_binary,
             workspace,
             conversations: Arc::new(RwLock::new(HashMap::new())),
             broadcast_tx,
+            proxy_mgr,
         }
     }
 
@@ -149,6 +152,17 @@ impl SessionManager {
             .arg("stream-json")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        if let Some(proxy_url) = self.proxy_mgr.get_active_proxy_url().await {
+            info!("Injecting proxy into agy turn: {}", proxy_url);
+            cmd.env("HTTPS_PROXY", &proxy_url)
+                .env("HTTP_PROXY", &proxy_url)
+                .env("ALL_PROXY", &proxy_url);
+        } else {
+            cmd.env_remove("HTTPS_PROXY")
+                .env_remove("HTTP_PROXY")
+                .env_remove("ALL_PROXY");
+        }
 
         if let Some(model) = model_override {
             cmd.arg("--model").arg(model);

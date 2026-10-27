@@ -1,18 +1,21 @@
 use anyhow::Result;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::process::Command;
 use tracing::info;
 
 use crate::protocol::{AccountInfo, ModelInfo};
+use crate::proxy::ProxyManager;
 
 pub struct AccountManager {
     token_path: PathBuf,
     backup_path: PathBuf,
     agy_bin: String,
+    proxy_mgr: Arc<ProxyManager>,
 }
 
 impl AccountManager {
-    pub fn new(agy_bin: String) -> Self {
+    pub fn new(agy_bin: String, proxy_mgr: Arc<ProxyManager>) -> Self {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".into());
         let base = PathBuf::from(home).join(".gemini/antigravity-cli");
         let token_path = base.join("antigravity-oauth-token");
@@ -22,6 +25,7 @@ impl AccountManager {
             token_path,
             backup_path,
             agy_bin,
+            proxy_mgr,
         }
     }
 
@@ -92,36 +96,52 @@ impl AccountManager {
     }
 
     pub async fn get_usage(&self) -> Result<String> {
-        let output = Command::new(&self.agy_bin)
-            .arg("-p")
+        let mut cmd = Command::new(&self.agy_bin);
+        cmd.arg("-p")
             .arg("/usage")
             .arg("--output-format")
-            .arg("text")
-            .output()
-            .await?;
+            .arg("text");
 
+        if let Some(proxy) = self.proxy_mgr.get_active_proxy_url().await {
+            cmd.env("HTTPS_PROXY", &proxy)
+                .env("HTTP_PROXY", &proxy)
+                .env("ALL_PROXY", &proxy);
+        }
+
+        let output = cmd.output().await?;
         let res = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(res)
     }
 
     pub async fn get_credits(&self) -> Result<String> {
-        let output = Command::new(&self.agy_bin)
-            .arg("-p")
+        let mut cmd = Command::new(&self.agy_bin);
+        cmd.arg("-p")
             .arg("/credits")
             .arg("--output-format")
-            .arg("text")
-            .output()
-            .await?;
+            .arg("text");
 
+        if let Some(proxy) = self.proxy_mgr.get_active_proxy_url().await {
+            cmd.env("HTTPS_PROXY", &proxy)
+                .env("HTTP_PROXY", &proxy)
+                .env("ALL_PROXY", &proxy);
+        }
+
+        let output = cmd.output().await?;
         let res = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(res)
     }
 
     pub async fn get_models(&self) -> Result<Vec<ModelInfo>> {
-        let output = Command::new(&self.agy_bin)
-            .arg("models")
-            .output()
-            .await?;
+        let mut cmd = Command::new(&self.agy_bin);
+        cmd.arg("models");
+
+        if let Some(proxy) = self.proxy_mgr.get_active_proxy_url().await {
+            cmd.env("HTTPS_PROXY", &proxy)
+                .env("HTTP_PROXY", &proxy)
+                .env("ALL_PROXY", &proxy);
+        }
+
+        let output = cmd.output().await?;
 
         let text = String::from_utf8_lossy(&output.stdout);
         let mut models = Vec::new();
