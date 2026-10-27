@@ -225,13 +225,13 @@ public struct ContentView: View {
             .background(LiquidAmbientBackground())
             .navigationBarTitleDisplayMode(.inline)
             .overlay(
-                Group {
+                ZStack {
                     if viewModel.isExecuting {
-                        Color.black.opacity(0.2)
+                        Color.black.opacity(0.18)
                             .ignoresSafeArea()
                             .allowsHitTesting(false)
                         ProgressView()
-                            .scaleEffect(1.5)
+                            .scaleEffect(1.4)
                             .allowsHitTesting(false)
                     }
                 }
