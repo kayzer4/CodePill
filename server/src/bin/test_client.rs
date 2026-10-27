@@ -3,19 +3,19 @@ use tokio_tungstenite::connect_async;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let url = "ws://127.0.0.1:8089/ws";
-    println!("Connecting to {}", url);
+    let url = "ws://127.0.0.1:44321/ws";
+    println!("Connecting to inconspicuous port {}", url);
 
     let (ws_stream, _) = connect_async(url).await?;
     println!("WebSocket connected successfully!");
 
     let (mut write, mut read) = ws_stream.split();
 
-    // Send prompt
+    // 1. Send prompt
     let prompt_msg = serde_json::json!({
         "type": "prompt",
         "payload": {
-            "text": "echo CodePill Dynamic Island Test"
+            "text": "Count: 1, 2, 3"
         }
     });
 
@@ -24,18 +24,25 @@ async fn main() -> anyhow::Result<()> {
         .send(tokio_tungstenite::tungstenite::Message::Text(prompt_msg.to_string().into()))
         .await?;
 
-    // Read responses for up to 10 seconds
-    let timeout = tokio::time::sleep(tokio::time::Duration::from_secs(10));
+    let timeout = tokio::time::sleep(tokio::time::Duration::from_secs(12));
     tokio::pin!(timeout);
+
+    let mut token_chunks_count = 0;
 
     loop {
         tokio::select! {
             msg = read.next() => {
                 match msg {
                     Some(Ok(m)) => {
-                        println!("<<< RECEIVED: {}", m);
-                        if m.to_string().contains("turn_finished") {
-                            println!("Turn finished received!");
+                        let text = m.to_string();
+                        if text.contains("token_chunk") {
+                            token_chunks_count += 1;
+                            println!(">>> TOKEN CHUNK: {}", text);
+                        } else {
+                            println!("<<< MSG: {}", text);
+                        }
+                        if text.contains("turn_finished") {
+                            println!("Turn finished! Total token chunks streamed: {}", token_chunks_count);
                             break;
                         }
                     }

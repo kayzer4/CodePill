@@ -15,3 +15,10 @@ public struct ModelItem: Identifiable, Codable, Hashable {
 public struct ModelsResponse: Codable {
     public let models: [ModelItem]
 }
+
+public struct ConversationItem: Identifiable, Codable, Hashable {
+    public let id: String
+    public var title: String
+    public var updated_at: String
+    public var message_count: Int
+}

@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import UIKit
 
 @MainActor
 public protocol CodePillClientDelegate: AnyObject {
@@ -9,7 +10,10 @@ public protocol CodePillClientDelegate: AnyObject {
     func didUpdateIsland(state: CodePillAttributes.ContentState)
     func didStartTool(callId: String, name: String, summary: String)
     func didEndTool(callId: String, success: Bool, output: String)
-    func didFinishTurn(success: Bool, summary: String?)
+    func didFinishTurn(conversationId: String, success: Bool, summary: String?)
+    func didSyncHistory(conversationId: String, messages: [ChatMessage], isBusy: Bool, islandState: CodePillAttributes.ContentState?)
+    func didCompleteRollback(conversationId: String, messages: [ChatMessage], restoredPrompt: String?)
+    func didReceiveConversationsList(_ list: [ConversationItem])
     func didReceiveError(_ message: String)
 }
 
@@ -19,25 +23,39 @@ public final class CodePillClient: NSObject, ObservableObject {
 
     @Published public var isConnected: Bool = false
     @Published public var host: String {
-        didSet {
-            UserDefaults.standard.set(host, forKey: "codepill_host")
-        }
+        didSet { UserDefaults.standard.set(host, forKey: "codepill_host") }
     }
     @Published public var port: Int {
-        didSet {
-            UserDefaults.standard.set(port, forKey: "codepill_port")
-        }
+        didSet { UserDefaults.standard.set(port, forKey: "codepill_port") }
     }
 
     private var session: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
     private var currentActivity: Activity<CodePillAttributes>?
+    private var activeConversationId: String?
 
     public override init() {
         self.host = UserDefaults.standard.string(forKey: "codepill_host") ?? "127.0.0.1"
         let savedPort = UserDefaults.standard.integer(forKey: "codepill_port")
-        self.port = savedPort > 0 ? savedPort : 8080
+        // Default to new inconspicuous port 44321
+        self.port = savedPort > 0 ? savedPort : 44321
         super.init()
+
+        // Reconnect and sync when returning to foreground
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleForeground() {
+        if !isConnected {
+            connect()
+        } else if let convId = activeConversationId {
+            sendSync(conversationId: convId)
+        }
     }
 
     public var baseURL: URL {
@@ -61,6 +79,12 @@ public final class CodePillClient: NSObject, ObservableObject {
         self.isConnected = true
         delegate?.clientDidConnect()
         listen()
+
+        // Sync active conversation upon connection
+        if let convId = activeConversationId {
+            sendSync(conversationId: convId)
+        }
+        requestConversationsList()
     }
 
     public func disconnect() {
@@ -80,6 +104,8 @@ public final class CodePillClient: NSObject, ObservableObject {
         model: String? = nil,
         projectName: String = "CodePill"
     ) {
+        self.activeConversationId = conversationId
+
         var payload: [String: Any] = ["text": text]
         if let workspace = workspace { payload["workspace"] = workspace }
         if let conversationId = conversationId { payload["conversation_id"] = conversationId }
@@ -90,24 +116,47 @@ public final class CodePillClient: NSObject, ObservableObject {
             "payload": payload
         ]
 
-        if let data = try? JSONSerialization.data(withJSONObject: envelope),
+        sendJson(envelope)
+        startDynamicIsland(prompt: text, projectName: projectName)
+    }
+
+    public func sendSync(conversationId: String) {
+        self.activeConversationId = conversationId
+        let envelope: [String: Any] = [
+            "type": "sync",
+            "payload": ["conversation_id": conversationId]
+        ]
+        sendJson(envelope)
+    }
+
+    public func sendRollback(conversationId: String) {
+        let envelope: [String: Any] = [
+            "type": "rollback",
+            "payload": ["conversation_id": conversationId]
+        ]
+        sendJson(envelope)
+    }
+
+    public func requestConversationsList() {
+        let envelope: [String: Any] = [
+            "type": "list_conversations"
+        ]
+        sendJson(envelope)
+    }
+
+    public func cancelTurn() {
+        let envelope: [String: Any] = ["type": "cancel"]
+        sendJson(envelope)
+    }
+
+    private func sendJson(_ dict: [String: Any]) {
+        if let data = try? JSONSerialization.data(withJSONObject: dict),
            let json = String(data: data, encoding: .utf8) {
             webSocketTask?.send(.string(json)) { error in
                 if let error = error {
                     print("[CodePill] Send error: \(error)")
                 }
             }
-        }
-
-        // Launch Dynamic Island Live Activity
-        startDynamicIsland(prompt: text, projectName: projectName)
-    }
-
-    public func cancelTurn() {
-        let envelope: [String: Any] = ["type": "cancel"]
-        if let data = try? JSONSerialization.data(withJSONObject: envelope),
-           let json = String(data: data, encoding: .utf8) {
-            webSocketTask?.send(.string(json)) { _ in }
         }
     }
 
@@ -186,10 +235,90 @@ public final class CodePillClient: NSObject, ObservableObject {
             delegate?.didEndTool(callId: callId, success: success, output: output)
 
         case "turn_finished":
+            let convId = payload["conversation_id"] as? String ?? ""
             let success = payload["success"] as? Bool ?? true
             let summary = payload["summary"] as? String
             endDynamicIsland(success: success)
-            delegate?.didFinishTurn(success: success, summary: summary)
+            delegate?.didFinishTurn(conversationId: convId, success: success, summary: summary)
+            requestConversationsList()
+
+        case "history_sync":
+            let convId = payload["conversation_id"] as? String ?? ""
+            let isBusy = payload["is_busy"] as? Bool ?? false
+            var islandState: CodePillAttributes.ContentState? = nil
+            if let isl = payload["island_state"] as? [String: Any] {
+                islandState = CodePillAttributes.ContentState(
+                    status: isl["status"] as? String ?? "",
+                    currentFile: isl["current_file"] as? String,
+                    stepDescription: isl["step_description"] as? String ?? "",
+                    isBusy: isl["is_busy"] as? Bool ?? false,
+                    needsApproval: isl["needs_approval"] as? Bool ?? false
+                )
+            }
+
+            var chatMessages: [ChatMessage] = []
+            if let rawMsgs = payload["messages"] as? [[String: Any]] {
+                for m in rawMsgs {
+                    let roleStr = m["role"] as? String ?? "assistant"
+                    let role: MessageRole = roleStr == "user" ? .user : (roleStr == "system" ? .system : .assistant)
+                    let text = m["text"] as? String ?? ""
+                    var tools: [ToolCallItem] = []
+                    if let rawTools = m["tool_calls"] as? [[String: Any]] {
+                        for t in rawTools {
+                            tools.append(ToolCallItem(
+                                id: t["id"] as? String ?? UUID().uuidString,
+                                name: t["name"] as? String ?? "",
+                                summary: t["summary"] as? String ?? "",
+                                output: t["output"] as? String,
+                                isRunning: t["is_running"] as? Bool ?? false,
+                                isSuccess: t["is_success"] as? Bool ?? false
+                            ))
+                        }
+                    }
+                    chatMessages.append(ChatMessage(
+                        role: role,
+                        text: text,
+                        toolCalls: tools
+                    ))
+                }
+            }
+
+            delegate?.didSyncHistory(
+                conversationId: convId,
+                messages: chatMessages,
+                isBusy: isBusy,
+                islandState: islandState
+            )
+
+        case "rollback_completed":
+            let convId = payload["conversation_id"] as? String ?? ""
+            let restoredPrompt = payload["restored_prompt"] as? String
+            var chatMessages: [ChatMessage] = []
+            if let rawMsgs = payload["messages"] as? [[String: Any]] {
+                for m in rawMsgs {
+                    let roleStr = m["role"] as? String ?? "assistant"
+                    let role: MessageRole = roleStr == "user" ? .user : (roleStr == "system" ? .system : .assistant)
+                    let text = m["text"] as? String ?? ""
+                    chatMessages.append(ChatMessage(role: role, text: text))
+                }
+            }
+            delegate?.didCompleteRollback(
+                conversationId: convId,
+                messages: chatMessages,
+                restoredPrompt: restoredPrompt
+            )
+
+        case "conversations_list":
+            if let rawList = payload["conversations"] as? [[String: Any]] {
+                let items: [ConversationItem] = rawList.compactMap { c in
+                    guard let id = c["id"] as? String,
+                          let title = c["title"] as? String else { return nil }
+                    let updated = c["updated_at"] as? String ?? ""
+                    let count = c["message_count"] as? Int ?? 0
+                    return ConversationItem(id: id, title: title, updated_at: updated, message_count: count)
+                }
+                delegate?.didReceiveConversationsList(items)
+            }
 
         case "error":
             let message = payload["message"] as? String ?? "Unknown error"
@@ -224,7 +353,6 @@ public final class CodePillClient: NSObject, ObservableObject {
                 pushType: .token
             )
 
-            // Listen for push-to-update tokens
             Task {
                 if let activity = currentActivity {
                     for await pushToken in activity.pushTokenUpdates {
@@ -268,10 +396,7 @@ public final class CodePillClient: NSObject, ObservableObject {
                 "push_token": token
             ]
         ]
-        if let data = try? JSONSerialization.data(withJSONObject: envelope),
-           let json = String(data: data, encoding: .utf8) {
-            webSocketTask?.send(.string(json)) { _ in }
-        }
+        sendJson(envelope)
     }
 
     // MARK: - REST API Helpers

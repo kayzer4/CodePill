@@ -18,7 +18,7 @@ public struct LiveIslandPreview: View {
             Text(state.stepDescription)
                 .font(.caption.monospaced())
                 .lineLimit(1)
-                .foregroundStyle(.primary)
+                .foregroundStyle(.white)
 
             Spacer()
 
@@ -26,17 +26,13 @@ public struct LiveIslandPreview: View {
                 .font(.caption2.bold())
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(state.isBusy ? Color.orange.opacity(0.2) : Color.green.opacity(0.2))
+                .background(state.isBusy ? Color.orange.opacity(0.25) : Color.green.opacity(0.25))
                 .foregroundStyle(state.isBusy ? .orange : .green)
                 .clipShape(Capsule())
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(UIColor.secondarySystemBackground))
-                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-        )
-        .padding(.horizontal)
+        .liquidGlass(cornerRadius: 22, glowColor: Color.purple.opacity(0.25), isHighlighted: true)
+        .padding(.horizontal, 16)
     }
 }

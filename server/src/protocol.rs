@@ -16,11 +16,40 @@ pub struct ModelInfo {
     pub name: String,
 }
 
+/// Conversation summary item for list
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationSummary {
+    pub id: String,
+    pub title: String,
+    pub updated_at: String,
+    pub message_count: usize,
+}
+
+/// Stored chat message on the server
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredMessage {
+    pub id: String,
+    pub role: String,
+    pub text: String,
+    pub tool_calls: Vec<StoredToolCall>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredToolCall {
+    pub id: String,
+    pub name: String,
+    pub summary: String,
+    pub output: Option<String>,
+    pub is_running: bool,
+    pub is_success: bool,
+}
+
 /// Messages sent from the iOS client to CodePill server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ClientMessage {
-    /// Send a prompt or instruction to Antigravity
+    /// Send a prompt to Antigravity
     #[serde(rename = "prompt")]
     Prompt {
         text: String,
@@ -32,7 +61,23 @@ pub enum ClientMessage {
         model: Option<String>,
     },
 
-    /// Approve or reject a pending tool action / edit
+    /// Request sync/restore of a conversation state upon reconnect
+    #[serde(rename = "sync")]
+    Sync {
+        conversation_id: Option<String>,
+    },
+
+    /// Rollback the conversation to before the last turn (rewind)
+    #[serde(rename = "rollback")]
+    Rollback {
+        conversation_id: String,
+    },
+
+    /// List all known conversations
+    #[serde(rename = "list_conversations")]
+    ListConversations,
+
+    /// Approve or reject a pending tool action
     #[serde(rename = "action_response")]
     ActionResponse {
         action_id: String,
@@ -54,7 +99,7 @@ pub enum ClientMessage {
 /// Dynamic Island State for ActivityKit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DynamicIslandState {
-    pub status: String,          // e.g. "Thinking", "Writing code", "Running tests", "Waiting"
+    pub status: String,
     pub current_file: Option<String>,
     pub step_description: String,
     pub is_busy: bool,
@@ -109,8 +154,29 @@ pub enum ServerMessage {
 
     #[serde(rename = "turn_finished")]
     TurnFinished {
+        conversation_id: String,
         success: bool,
         summary: Option<String>,
+    },
+
+    #[serde(rename = "history_sync")]
+    HistorySync {
+        conversation_id: String,
+        messages: Vec<StoredMessage>,
+        is_busy: bool,
+        island_state: Option<DynamicIslandState>,
+    },
+
+    #[serde(rename = "conversations_list")]
+    ConversationsList {
+        conversations: Vec<ConversationSummary>,
+    },
+
+    #[serde(rename = "rollback_completed")]
+    RollbackCompleted {
+        conversation_id: String,
+        messages: Vec<StoredMessage>,
+        restored_prompt: Option<String>,
     },
 
     #[serde(rename = "error")]

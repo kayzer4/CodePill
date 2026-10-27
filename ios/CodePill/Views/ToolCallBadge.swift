@@ -24,7 +24,7 @@ public struct ToolCallBadge: View {
 
                     Text(item.summary)
                         .font(.caption.monospaced())
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                         .lineLimit(1)
 
                     Spacer()
@@ -33,10 +33,9 @@ public struct ToolCallBadge: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .liquidGlass(cornerRadius: 12)
             }
             .buttonStyle(.plain)
 
@@ -44,11 +43,10 @@ public struct ToolCallBadge: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(output)
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                        .padding(8)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(10)
                 }
-                .background(Color.black.opacity(0.4))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .liquidGlass(cornerRadius: 10, glowColor: .clear)
             }
         }
     }

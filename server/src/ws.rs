@@ -27,17 +27,33 @@ pub async fn ws_handler(
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (out_tx, mut out_rx) = mpsc::channel::<ServerMessage>(100);
+    let (direct_tx, mut direct_rx) = mpsc::channel::<ServerMessage>(100);
+
+    let mut broadcast_rx = state.session_mgr.subscribe();
 
     info!("New iOS client connected via WebSocket");
 
     // Task forwarding server messages to WebSocket client
     let send_task = tokio::spawn(async move {
-        while let Some(msg) = out_rx.recv().await {
-            if let Ok(json) = serde_json::to_string(&msg) {
-                if ws_sender.send(Message::Text(json.into())).await.is_err() {
-                    break;
+        loop {
+            tokio::select! {
+                // Direct responses to this specific client
+                Some(msg) = direct_rx.recv() => {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        if ws_sender.send(Message::Text(json.into())).await.is_err() {
+                            break;
+                        }
+                    }
                 }
+                // Broadcast events from background agent turns
+                Ok((_conv_id, msg)) = broadcast_rx.recv() => {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        if ws_sender.send(Message::Text(json.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                else => break,
             }
         }
     });
@@ -52,28 +68,61 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             text,
                             workspace,
                             conversation_id,
-                            ..
+                            model,
                         } => {
                             let mgr = Arc::clone(&state.session_mgr);
-                            let tx = out_tx.clone();
+                            let direct = direct_tx.clone();
                             tokio::spawn(async move {
                                 if let Err(e) = mgr
                                     .start_turn(
                                         &text,
                                         conversation_id.as_deref(),
                                         workspace.as_deref(),
-                                        tx.clone(),
+                                        model.as_deref(),
                                     )
                                     .await
                                 {
                                     error!("Turn error: {:?}", e);
-                                    let _ = tx
+                                    let _ = direct
                                         .send(ServerMessage::Error {
                                             message: e.to_string(),
                                         })
                                         .await;
                                 }
                             });
+                        }
+                        ClientMessage::Sync { conversation_id } => {
+                            if let Some(id) = conversation_id {
+                                if let Some(conv) = state.session_mgr.get_conversation(&id).await {
+                                    let _ = direct_tx
+                                        .send(ServerMessage::HistorySync {
+                                            conversation_id: conv.id,
+                                            messages: conv.messages,
+                                            is_busy: conv.is_busy,
+                                            island_state: conv.current_island_state,
+                                        })
+                                        .await;
+                                }
+                            }
+                        }
+                        ClientMessage::Rollback { conversation_id } => {
+                            if let Some((msgs, prompt)) = state.session_mgr.rollback(&conversation_id).await {
+                                let _ = direct_tx
+                                    .send(ServerMessage::RollbackCompleted {
+                                        conversation_id,
+                                        messages: msgs,
+                                        restored_prompt: prompt,
+                                    })
+                                    .await;
+                            }
+                        }
+                        ClientMessage::ListConversations => {
+                            let list = state.session_mgr.list_conversations().await;
+                            let _ = direct_tx
+                                .send(ServerMessage::ConversationsList {
+                                    conversations: list,
+                                })
+                                .await;
                         }
                         ClientMessage::ActionResponse { action_id, approved } => {
                             info!("Action {} response: {}", action_id, approved);

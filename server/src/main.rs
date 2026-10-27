@@ -16,7 +16,7 @@ mod session;
 mod ws;
 
 use account::AccountManager;
-use protocol::AccountInfo;
+use protocol::{AccountInfo, ConversationSummary};
 use session::SessionManager;
 use ws::{ws_handler, AppState};
 
@@ -28,8 +28,8 @@ struct Args {
     #[arg(short, long, default_value = "0.0.0.0")]
     bind: String,
 
-    /// Port to listen on
-    #[arg(short, long, default_value_t = 8080)]
+    /// Port to listen on (inconspicuous default 44321)
+    #[arg(short, long, default_value_t = 44321)]
     port: u16,
 
     /// Path to agy binary
@@ -64,7 +64,9 @@ async fn main() -> anyhow::Result<()> {
     let session_mgr = Arc::new(SessionManager::new(args.agy_bin.clone(), workspace_str.clone()));
     let account_mgr = Arc::new(AccountManager::new(args.agy_bin.clone()));
 
-    let app_state = AppState { session_mgr };
+    let app_state = AppState {
+        session_mgr: Arc::clone(&session_mgr),
+    };
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -74,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health_check))
         .route("/ws", get(ws_handler))
+        .route("/api/conversations", get(get_conversations))
         .route("/api/account", get(get_account))
         .route("/api/account/logout", post(logout_account))
         .route("/api/account/restore", post(restore_account))
@@ -83,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .layer(Extension(account_mgr))
+        .layer(Extension(session_mgr))
         .with_state(app_state);
 
     let addr: SocketAddr = format!("{}:{}", args.bind, args.port).parse()?;
@@ -101,6 +105,12 @@ async fn health_check() -> Json<serde_json::Value> {
         "service": "codepill-server",
         "version": env!("CARGO_PKG_VERSION")
     }))
+}
+
+async fn get_conversations(
+    Extension(session_mgr): Extension<Arc<SessionManager>>,
+) -> Json<Vec<ConversationSummary>> {
+    Json(session_mgr.list_conversations().await)
 }
 
 async fn get_account(

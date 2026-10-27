@@ -10,29 +10,47 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     @Published public var currentIslandState: CodePillAttributes.ContentState?
     @Published public var selectedModel: String = "gemini-3.8-flash-medium"
     @Published public var currentConversationId: String? = nil
+    @Published public var conversations: [ConversationItem] = []
 
     public let client: CodePillClient
-
     private var currentAssistantMessageId: UUID?
 
     public init(client: CodePillClient) {
         self.client = client
         self.client.delegate = self
 
-        // Welcome system message
-        self.messages.append(
+        startNewChat()
+    }
+
+    public func startNewChat() {
+        self.currentConversationId = UUID().uuidString
+        self.messages = [
             ChatMessage(
                 role: .system,
-                text: "💊 CodePill connected to Arch Linux. Vibe-coding is active."
+                text: "💊 CodePill ready. Port: \(client.port). Liquid Glass session active."
             )
-        )
+        ]
+        self.currentIslandState = nil
+        self.isExecuting = false
+        Haptics.shared.impact(.light)
+    }
+
+    public func selectConversation(_ item: ConversationItem) {
+        self.currentConversationId = item.id
+        client.sendSync(conversationId: item.id)
+        Haptics.shared.selection()
+    }
+
+    public func rollbackTurn() {
+        guard let convId = currentConversationId, !isExecuting else { return }
+        client.sendRollback(conversationId: convId)
+        Haptics.shared.impact(.medium)
     }
 
     public func sendMessage() {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        // Append User Message
         let userMsg = ChatMessage(role: .user, text: trimmed)
         messages.append(userMsg)
         inputText = ""
@@ -40,12 +58,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
         Haptics.shared.impact(.light)
 
-        // Prepare new Assistant Message placeholder
         let assistantMsg = ChatMessage(role: .assistant, text: "")
         messages.append(assistantMsg)
         currentAssistantMessageId = assistantMsg.id
 
-        // Send via client
         client.sendPrompt(
             trimmed,
             conversationId: currentConversationId,
@@ -73,6 +89,9 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     public func didReceiveTokenChunk(_ chunk: String) {
         guard let id = currentAssistantMessageId,
               let idx = messages.firstIndex(where: { $0.id == id }) else {
+            if let lastIdx = messages.indices.last, messages[lastIdx].role == .assistant {
+                messages[lastIdx].text += chunk
+            }
             return
         }
         messages[idx].text += chunk
@@ -117,7 +136,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         }
     }
 
-    public func didFinishTurn(success: Bool, summary: String?) {
+    public func didFinishTurn(conversationId: String, success: Bool, summary: String?) {
         isExecuting = false
         currentAssistantMessageId = nil
         currentIslandState = nil
@@ -127,6 +146,36 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         } else {
             Haptics.shared.notify(.error)
         }
+    }
+
+    public func didSyncHistory(
+        conversationId: String,
+        messages: [ChatMessage],
+        isBusy: Bool,
+        islandState: CodePillAttributes.ContentState?
+    ) {
+        self.currentConversationId = conversationId
+        if !messages.isEmpty {
+            self.messages = messages
+        }
+        self.isExecuting = isBusy
+        self.currentIslandState = islandState
+    }
+
+    public func didCompleteRollback(
+        conversationId: String,
+        messages: [ChatMessage],
+        restoredPrompt: String?
+    ) {
+        self.messages = messages
+        if let prompt = restoredPrompt {
+            self.inputText = prompt
+        }
+        Haptics.shared.notify(.success)
+    }
+
+    public func didReceiveConversationsList(_ list: [ConversationItem]) {
+        self.conversations = list
     }
 
     public func didReceiveError(_ message: String) {
