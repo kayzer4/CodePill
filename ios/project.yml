@@ -25,6 +25,31 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            100.120.17.25:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSTemporaryExceptionAllowsInsecureHTTPLoads: true
+            "100.64.0.0/10":
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSTemporaryExceptionAllowsInsecureHTTPLoads: true
+            192.168.1.128:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSTemporaryExceptionAllowsInsecureHTTPLoads: true
+            "192.168.0.0/16":
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSTemporaryExceptionAllowsInsecureHTTPLoads: true
+            "10.0.0.0/8":
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSTemporaryExceptionAllowsInsecureHTTPLoads: true
+            arch:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSTemporaryExceptionAllowsInsecureHTTPLoads: true
     dependencies:
       - target: CodePillWidget
     settings:
