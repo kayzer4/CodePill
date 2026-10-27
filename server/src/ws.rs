@@ -24,7 +24,9 @@ pub async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state, addr))
+    ws.max_message_size(64 * 1024 * 1024)
+        .max_frame_size(16 * 1024 * 1024)
+        .on_upgrade(move |socket| handle_socket(socket, state, addr))
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {

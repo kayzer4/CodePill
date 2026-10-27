@@ -180,7 +180,12 @@ impl SessionManager {
                 "GENERIC" => {
                     if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
                         if let Some(last_tool) = pending_tools.last_mut() {
-                            last_tool.output = Some(content.to_string());
+                            let out = if content.len() > 20_000 {
+                                format!("{}... [truncated for mobile]", &content[..20_000])
+                            } else {
+                                content.to_string()
+                            };
+                            last_tool.output = Some(out);
                         }
                     }
                 }

@@ -109,6 +109,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         configuration.timeoutIntervalForRequest = 30
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
         webSocketTask = session?.webSocketTask(with: wsURL)
+        webSocketTask?.maximumMessageSize = 64 * 1024 * 1024 // Allow up to 64MB for large conversation histories
         webSocketTask?.resume()
 
         listen()
