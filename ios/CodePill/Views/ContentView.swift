@@ -9,9 +9,20 @@ public struct ContentView: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showFilePicker: Bool = false
     @State private var isAtBottom: Bool = true
+    @State private var hasInitialScrolled: Bool = false
 
     public init(client: CodePillClient) {
         _viewModel = StateObject(wrappedValue: ChatViewModel(client: client))
+    }
+
+    private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = false) {
+        if animated {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+            }
+        } else {
+            proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+        }
     }
 
     public var body: some View {
@@ -29,7 +40,7 @@ public struct ContentView: View {
                 ScrollViewReader { proxy in
                     ZStack(alignment: .bottomTrailing) {
                         ScrollView {
-                            LazyVStack(spacing: 12) {
+                            VStack(spacing: 12) {
                                 ForEach(viewModel.messages) { msg in
                                     MessageRow(
                                         message: msg,
@@ -49,7 +60,7 @@ public struct ContentView: View {
 
                                 // Dedicated bottom scroll anchor & viewport detector
                                 Color.clear
-                                    .frame(height: 1)
+                                    .frame(height: 8)
                                     .id("chatBottomAnchor")
                                     .onAppear {
                                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -64,12 +75,31 @@ public struct ContentView: View {
                             }
                             .padding(.vertical, 12)
                         }
+                        .defaultScrollAnchorBottom()
                         .refreshable {
                             await viewModel.refreshCurrentSessionAsync()
                         }
                         .scrollDismissesKeyboard(.interactively)
                         .onTapGesture {
                             hideKeyboard()
+                        }
+                        .onAppear {
+                            scrollToBottom(proxy: proxy, animated: false)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                scrollToBottom(proxy: proxy, animated: false)
+                            }
+                        }
+                        .onChange(of: viewModel.currentConversationId) { _ in
+                            hasInitialScrolled = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                scrollToBottom(proxy: proxy, animated: false)
+                            }
+                        }
+                        .onChange(of: viewModel.isExecuting) { executing in
+                            if executing {
+                                isAtBottom = true
+                                scrollToBottom(proxy: proxy, animated: true)
+                            }
                         }
                         .onChange(of: viewModel.messages.last?.text) { _ in
                             if isAtBottom {
@@ -83,8 +113,13 @@ public struct ContentView: View {
                                 }
                             }
                         }
-                        .onChange(of: viewModel.messages.count) { _ in
-                            if isAtBottom {
+                        .onChange(of: viewModel.messages.count) { newCount in
+                            if !hasInitialScrolled && newCount > 0 {
+                                hasInitialScrolled = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    scrollToBottom(proxy: proxy, animated: false)
+                                }
+                            } else if isAtBottom {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                     proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
                                 }
@@ -96,34 +131,38 @@ public struct ContentView: View {
                             Button {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                     proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
-                                    isAtBottom = true
                                 }
                                 Haptics.shared.impact(.light)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        isAtBottom = true
+                                    }
+                                }
                             } label: {
                                 ZStack {
                                     Circle()
                                         .fill(Color(UIColor.secondarySystemBackground))
-                                        .frame(width: 38, height: 38)
-                                        .shadow(color: .black.opacity(0.32), radius: 6, x: 0, y: 3)
+                                        .frame(width: 40, height: 40)
+                                        .shadow(color: .black.opacity(0.35), radius: 6, x: 0, y: 3)
                                         .overlay(
                                             Circle()
-                                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
                                         )
 
                                     Image(systemName: "chevron.down")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.system(size: 15, weight: .bold))
                                         .foregroundStyle(.primary)
 
                                     if viewModel.isExecuting {
                                         Circle()
                                             .fill(Color.accentColor)
-                                            .frame(width: 8, height: 8)
-                                            .offset(x: 12, y: -12)
+                                            .frame(width: 9, height: 9)
+                                            .offset(x: 13, y: -13)
                                     }
                                 }
                             }
                             .padding(.trailing, 16)
-                            .padding(.bottom, 10)
+                            .padding(.bottom, 12)
                             .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
                     }
@@ -342,5 +381,16 @@ public struct ContentView: View {
 
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+fileprivate extension View {
+    @ViewBuilder
+    func defaultScrollAnchorBottom() -> some View {
+        if #available(iOS 17.0, *) {
+            self.defaultScrollAnchor(.bottom)
+        } else {
+            self
+        }
     }
 }
