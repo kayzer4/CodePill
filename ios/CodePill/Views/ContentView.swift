@@ -2,17 +2,6 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-public struct HeaderScaleButtonStyle: ButtonStyle {
-    public init() {}
-
-    public func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.88 : 1.0)
-            .opacity(configuration.isPressed ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
-
 public struct ContentView: View {
     @StateObject private var viewModel: ChatViewModel
     @State private var showSettings: Bool = false
@@ -25,20 +14,13 @@ public struct ContentView: View {
     }
 
     public var body: some View {
-        ZStack {
-            // Strict Clean Apple Dark Background
-            Color(UIColor.systemBackground)
-                .ignoresSafeArea()
-
+        NavigationStack {
             VStack(spacing: 0) {
-                // Native Apple iOS Navigation Header
-                nativeHeaderBar
-
                 // Dynamic Island mirror preview when busy
                 if let island = viewModel.currentIslandState {
                     LiveIslandPreview(state: island)
                         .padding(.horizontal, 14)
-                        .padding(.top, 6)
+                        .padding(.top, 4)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
@@ -69,6 +51,9 @@ public struct ContentView: View {
                                 .id("chatBottomAnchor")
                         }
                         .padding(.vertical, 12)
+                    }
+                    .refreshable {
+                        await viewModel.refreshCurrentSessionAsync()
                     }
                     .scrollDismissesKeyboard(.interactively)
                     .onTapGesture {
@@ -102,6 +87,82 @@ public struct ContentView: View {
                 strictInputBar
                     .padding(.horizontal, 14)
                     .padding(.bottom, 8)
+            }
+            .background(Color(UIColor.systemBackground))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        viewModel.client.requestConversationsList()
+                        showConversations = true
+                        Haptics.shared.selection()
+                    } label: {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                }
+
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 2) {
+                        Text(currentConversationTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(statusIndicatorColor)
+                                .frame(width: 6, height: 6)
+
+                            Text(statusIndicatorText)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+
+                            if viewModel.isExecuting {
+                                ProgressView()
+                                    .scaleEffect(0.5)
+                                    .frame(width: 8, height: 8)
+                            }
+                        }
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 12) {
+                        // Reload/sync data button
+                        Button {
+                            viewModel.refreshCurrentSession()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+
+                        // Rollback turn button
+                        Button {
+                            viewModel.rollbackTurn()
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+                        .disabled(viewModel.isExecuting)
+
+                        // New chat button
+                        Button {
+                            viewModel.startNewChat()
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+
+                        // Settings button
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                    }
+                }
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -138,103 +199,12 @@ public struct ContentView: View {
         }
     }
 
-    private var nativeHeaderBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                // Conversations list button
-                Button {
-                    viewModel.client.requestConversationsList()
-                    DispatchQueue.main.async {
-                        showConversations = true
-                    }
-                } label: {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 36, height: 36)
-                        .background(Color(UIColor.secondarySystemBackground))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(HeaderScaleButtonStyle())
-
-                Spacer()
-
-                // Center Title & Status subtitle
-                VStack(spacing: 2) {
-                    Text("CodePill")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.primary)
-
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(statusIndicatorColor)
-                            .frame(width: 6, height: 6)
-
-                        Text(statusIndicatorText)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-
-                        if viewModel.isExecuting {
-                            ProgressView()
-                                .progressViewStyle(.circular)
-                                .scaleEffect(0.5)
-                        }
-                    }
-                }
-
-                Spacer()
-
-                // Actions: New Chat, Rollback, Settings
-                HStack(spacing: 8) {
-                    Button {
-                        viewModel.startNewChat()
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Color.accentColor)
-                            .frame(width: 34, height: 34)
-                            .background(Color(UIColor.secondarySystemBackground))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(HeaderScaleButtonStyle())
-
-                    Button {
-                        viewModel.rollbackTurn()
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(viewModel.isExecuting ? Color.secondary.opacity(0.3) : Color.orange)
-                            .frame(width: 34, height: 34)
-                            .background(Color(UIColor.secondarySystemBackground))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(HeaderScaleButtonStyle())
-                    .disabled(viewModel.isExecuting)
-
-                    Button {
-                        DispatchQueue.main.async {
-                            showSettings = true
-                        }
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 34, height: 34)
-                            .background(Color(UIColor.secondarySystemBackground))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(HeaderScaleButtonStyle())
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
-            .background(Color(UIColor.systemBackground).opacity(0.96))
-
-            Divider()
-                .opacity(0.35)
+    private var currentConversationTitle: String {
+        if let currentId = viewModel.currentConversationId,
+           let conv = viewModel.conversations.first(where: { $0.id == currentId }) {
+            return conv.title
         }
+        return "CodePill"
     }
 
     private var statusIndicatorColor: Color {

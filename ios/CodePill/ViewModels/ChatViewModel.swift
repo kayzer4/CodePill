@@ -170,6 +170,21 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         Haptics.shared.impact(.medium)
     }
 
+    public func refreshCurrentSession() {
+        Haptics.shared.impact(.light)
+        if let convId = currentConversationId {
+            client.sendSync(conversationId: convId)
+        } else if let id = client.activeConversationId {
+            client.sendSync(conversationId: id)
+        }
+        client.requestConversationsList()
+    }
+
+    public func refreshCurrentSessionAsync() async {
+        refreshCurrentSession()
+        try? await Task.sleep(nanoseconds: 600_000_000)
+    }
+
     public func deleteConversation(id: String) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             conversations.removeAll(where: { $0.id == id })
