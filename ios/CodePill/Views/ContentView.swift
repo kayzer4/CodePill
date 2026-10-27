@@ -92,11 +92,11 @@ public struct ContentView: View {
             // Center Branding & Connection Dot
             HStack(spacing: 6) {
                 Circle()
-                    .fill(viewModel.client.isConnected ? Color.green : Color.red)
+                    .fill(viewModel.isConnected ? Color.green : Color.red)
                     .frame(width: 8, height: 8)
-                    .shadow(color: viewModel.client.isConnected ? Color.green.opacity(0.8) : Color.red.opacity(0.8), radius: 4)
+                    .shadow(color: viewModel.isConnected ? Color.green.opacity(0.8) : Color.red.opacity(0.8), radius: 4)
 
-                Text("CodePill")
+                Text(viewModel.isConnected ? "CodePill (Live)" : "CodePill (Offline)")
                     .font(.headline.monospaced())
                     .foregroundStyle(.white)
             }

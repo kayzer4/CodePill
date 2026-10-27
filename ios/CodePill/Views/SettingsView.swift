@@ -27,13 +27,26 @@ public struct SettingsView: View {
                     TextField("Port", text: $portInput)
                         .keyboardType(.numberPad)
 
-                    Button(client.isConnected ? "Reconnect" : "Connect") {
-                        client.host = hostInput
-                        if let p = Int(portInput) { client.port = p }
-                        client.connect()
-                        Task { await loadData() }
+                    HStack {
+                        Button(client.isConnected ? "Reconnect" : "Connect") {
+                            client.host = hostInput
+                            if let p = Int(portInput) { client.port = p }
+                            client.connect()
+                            Task { await loadData() }
+                        }
+                        .tint(.purple)
+
+                        Spacer()
+
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(client.isConnected ? Color.green : Color.red)
+                                .frame(width: 8, height: 8)
+                            Text(client.isConnected ? "Connected" : "Offline")
+                                .font(.caption.bold())
+                                .foregroundColor(client.isConnected ? Color.green : Color.secondary)
+                        }
                     }
-                    .tint(.purple)
                 }
 
                 Section("Proxy & Antigravity Bypass") {

@@ -11,12 +11,14 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     @Published public var selectedModel: String = "gemini-3.8-flash-medium"
     @Published public var currentConversationId: String? = nil
     @Published public var conversations: [ConversationItem] = []
+    @Published public var isConnected: Bool = false
 
     public let client: CodePillClient
     private var currentAssistantMessageId: UUID?
 
     public init(client: CodePillClient) {
         self.client = client
+        self.isConnected = client.isConnected
         self.client.delegate = self
 
         startNewChat()
@@ -78,10 +80,12 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     // MARK: - CodePillClientDelegate
 
     public func clientDidConnect() {
+        self.isConnected = true
         Haptics.shared.notify(.success)
     }
 
     public func clientDidDisconnect(error: Error?) {
+        self.isConnected = false
         isExecuting = false
         Haptics.shared.notify(.error)
     }
