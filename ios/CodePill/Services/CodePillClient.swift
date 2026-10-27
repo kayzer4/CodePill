@@ -37,7 +37,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     private var isExplicitDisconnect: Bool = false
 
     public override init() {
-        self.host = UserDefaults.standard.string(forKey: "codepill_host") ?? "127.0.0.1"
+        self.host = UserDefaults.standard.string(forKey: "codepill_host") ?? "100.120.17.25"
         let savedPort = UserDefaults.standard.integer(forKey: "codepill_port")
         self.port = savedPort > 0 ? savedPort : 44321
         super.init()

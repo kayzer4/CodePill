@@ -1,11 +1,12 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
+        ConnectInfo, State,
     },
     response::IntoResponse,
 };
 use futures_util::{SinkExt, StreamExt};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -20,18 +21,19 @@ pub struct AppState {
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, addr))
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState) {
+async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (direct_tx, mut direct_rx) = mpsc::channel::<ServerMessage>(100);
 
     let mut broadcast_rx = state.session_mgr.subscribe();
 
-    info!("New iOS client connected via WebSocket");
+    info!("New iOS client connected via WebSocket from {}", addr);
 
     // Task forwarding server messages to WebSocket client
     let send_task = tokio::spawn(async move {

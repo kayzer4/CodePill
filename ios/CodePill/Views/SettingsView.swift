@@ -30,6 +30,30 @@ public struct SettingsView: View {
                     TextField("Port", text: $portInput)
                         .keyboardType(.numberPad)
 
+                    HStack(spacing: 8) {
+                        Button("Tailscale: 100.120.17.25") {
+                            hostInput = "100.120.17.25"
+                            portInput = "44321"
+                            client.host = hostInput
+                            client.port = 44321
+                            client.connect()
+                            Task { await loadData() }
+                        }
+                        .font(.caption2.bold())
+                        .buttonStyle(.bordered)
+
+                        Button("Wi-Fi: 192.168.1.128") {
+                            hostInput = "192.168.1.128"
+                            portInput = "44321"
+                            client.host = hostInput
+                            client.port = 44321
+                            client.connect()
+                            Task { await loadData() }
+                        }
+                        .font(.caption2.bold())
+                        .buttonStyle(.bordered)
+                    }
+
                     HStack {
                         Button(client.isConnected ? "Reconnect" : "Connect") {
                             client.host = hostInput
