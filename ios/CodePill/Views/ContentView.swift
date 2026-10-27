@@ -292,26 +292,13 @@ public struct ContentView: View {
                 .padding(.vertical, 9)
                 .foregroundStyle(.primary)
 
-            if viewModel.isExecuting {
-                Button {
-                    viewModel.cancelTurn()
-                } label: {
-                    Image(systemName: "stop.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.red)
-                }
-                .padding(.trailing, 6)
-            } else {
-                Button {
-                    viewModel.sendMessage()
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(canSend ? Color.accentColor : Color.secondary.opacity(0.4))
-                }
-                .disabled(!canSend)
-                .padding(.trailing, 6)
-            }
+            ChatInputActionButton(
+                isExecuting: viewModel.isExecuting,
+                canSend: canSend,
+                onSend: { viewModel.sendMessage() },
+                onCancel: { viewModel.cancelTurn() }
+            )
+            .padding(.trailing, 6)
         }
         .background(Color(UIColor.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

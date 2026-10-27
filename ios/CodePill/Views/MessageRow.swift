@@ -32,7 +32,7 @@ public struct MessageRow: View {
                     .padding(.vertical, 2)
                 }
 
-                // Message bubble with Markdown formatting
+                // Message bubble or typing loader
                 if !message.text.isEmpty {
                     HStack(alignment: .bottom, spacing: 8) {
                         if message.role == .user, let rollback = onRollback {
@@ -73,6 +73,9 @@ public struct MessageRow: View {
                                 }
                             }
                     }
+                } else if message.role == .assistant && message.toolCalls.isEmpty {
+                    // ChatGPT / Claude style typing indicator while waiting for first tokens
+                    ThinkingBubbleView()
                 }
             }
 
@@ -142,6 +145,14 @@ public struct MessageRow: View {
                     )
                 }
             }
+        }
+    }
+
+    private var textColor: Color {
+        switch message.role {
+        case .user: return .white
+        case .assistant: return .primary
+        case .system: return .secondary
         }
     }
 
