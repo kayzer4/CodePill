@@ -1,4 +1,7 @@
-use axum::{routing::get, Json, Router};
+use axum::{
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use clap::Parser;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -7,10 +10,13 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod account;
 mod protocol;
 mod session;
 mod ws;
 
+use account::AccountManager;
+use protocol::AccountInfo;
 use session::SessionManager;
 use ws::{ws_handler, AppState};
 
@@ -37,7 +43,6 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize logging
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -48,7 +53,6 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    // Canonicalize workspace directory
     let workspace_path = std::fs::canonicalize(&args.workspace)
         .unwrap_or_else(|_| std::path::PathBuf::from(&args.workspace));
     let workspace_str = workspace_path.to_string_lossy().to_string();
@@ -57,22 +61,29 @@ async fn main() -> anyhow::Result<()> {
     info!("📁 Default Workspace: {}", workspace_str);
     info!("⚡ Antigravity CLI binary: {}", args.agy_bin);
 
-    let session_mgr = Arc::new(SessionManager::new(args.agy_bin, workspace_str.clone()));
-    let state = AppState { session_mgr };
+    let session_mgr = Arc::new(SessionManager::new(args.agy_bin.clone(), workspace_str.clone()));
+    let account_mgr = Arc::new(AccountManager::new(args.agy_bin.clone()));
 
-    // Set up CORS
+    let app_state = AppState { session_mgr };
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build routes
     let app = Router::new()
         .route("/health", get(health_check))
         .route("/ws", get(ws_handler))
+        .route("/api/account", get(get_account))
+        .route("/api/account/logout", post(logout_account))
+        .route("/api/account/restore", post(restore_account))
+        .route("/api/account/usage", get(get_usage))
+        .route("/api/account/credits", get(get_credits))
+        .route("/api/models", get(get_models))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .layer(Extension(account_mgr))
+        .with_state(app_state);
 
     let addr: SocketAddr = format!("{}:{}", args.bind, args.port).parse()?;
     info!("👂 Listening on http://{}", addr);
@@ -90,4 +101,55 @@ async fn health_check() -> Json<serde_json::Value> {
         "service": "codepill-server",
         "version": env!("CARGO_PKG_VERSION")
     }))
+}
+
+async fn get_account(
+    Extension(account): Extension<Arc<AccountManager>>,
+) -> Json<AccountInfo> {
+    Json(account.get_account_info())
+}
+
+async fn logout_account(
+    Extension(account): Extension<Arc<AccountManager>>,
+) -> Json<serde_json::Value> {
+    match account.logout() {
+        Ok(success) => Json(serde_json::json!({ "success": success, "status": "logged_out" })),
+        Err(e) => Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+    }
+}
+
+async fn restore_account(
+    Extension(account): Extension<Arc<AccountManager>>,
+) -> Json<serde_json::Value> {
+    match account.login_restore() {
+        Ok(success) => Json(serde_json::json!({ "success": success, "status": "restored" })),
+        Err(e) => Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+    }
+}
+
+async fn get_usage(
+    Extension(account): Extension<Arc<AccountManager>>,
+) -> Json<serde_json::Value> {
+    match account.get_usage().await {
+        Ok(output) => Json(serde_json::json!({ "raw": output })),
+        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
+    }
+}
+
+async fn get_credits(
+    Extension(account): Extension<Arc<AccountManager>>,
+) -> Json<serde_json::Value> {
+    match account.get_credits().await {
+        Ok(output) => Json(serde_json::json!({ "raw": output })),
+        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
+    }
+}
+
+async fn get_models(
+    Extension(account): Extension<Arc<AccountManager>>,
+) -> Json<serde_json::Value> {
+    match account.get_models().await {
+        Ok(models) => Json(serde_json::json!({ "models": models })),
+        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
+    }
 }

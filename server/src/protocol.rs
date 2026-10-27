@@ -1,5 +1,21 @@
 use serde::{Deserialize, Serialize};
 
+/// Account info response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountInfo {
+    pub logged_in: bool,
+    pub email: Option<String>,
+    pub auth_method: Option<String>,
+    pub expiry: Option<String>,
+}
+
+/// Model info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    pub id: String,
+    pub name: String,
+}
+
 /// Messages sent from the iOS client to CodePill server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
