@@ -93,9 +93,25 @@ impl SessionManager {
     async fn load_antigravity_transcript(conv_id: &str) -> Vec<StoredMessage> {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
         let path = format!("{}/.gemini/antigravity-cli/brain/{}/.system_generated/logs/transcript.jsonl", home, conv_id);
+        let full_path = format!("{}/.gemini/antigravity-cli/brain/{}/.system_generated/logs/transcript_full.jsonl", home, conv_id);
+
         let Ok(file) = tokio::fs::File::open(&path).await else {
             return Vec::new();
         };
+
+        // Load full transcript lines indexed by step_index for truncation fallback
+        let mut full_lines: std::collections::HashMap<u64, serde_json::Value> = std::collections::HashMap::new();
+        if let Ok(full_file) = tokio::fs::File::open(&full_path).await {
+            use tokio::io::AsyncBufReadExt;
+            let mut full_reader = tokio::io::BufReader::new(full_file).lines();
+            while let Ok(Some(line)) = full_reader.next_line().await {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+                    if let Some(idx) = val.get("step_index").and_then(|v| v.as_u64()) {
+                        full_lines.insert(idx, val);
+                    }
+                }
+            }
+        }
 
         use tokio::io::AsyncBufReadExt;
         let mut reader = tokio::io::BufReader::new(file).lines();
@@ -169,7 +185,24 @@ impl SessionManager {
                         }
                     }
 
-                    if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                    // Get content — fallback to transcript_full if truncated
+                    let step_index = val.get("step_index").and_then(|v| v.as_u64());
+                    let truncated = val.get("truncated_fields")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().any(|f| f.as_str() == Some("content")))
+                        .unwrap_or(false);
+
+                    let content_opt = if truncated {
+                        step_index
+                            .and_then(|idx| full_lines.get(&idx))
+                            .and_then(|fv| fv.get("content"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                    } else {
+                        val.get("content").and_then(|v| v.as_str()).map(|s| s.to_string())
+                    };
+
+                    if let Some(content) = content_opt {
                         let tools = std::mem::take(&mut pending_tools);
                         messages.push(StoredMessage {
                             id: uuid::Uuid::new_v4().to_string(),
@@ -182,7 +215,24 @@ impl SessionManager {
                     }
                 }
                 "GENERIC" => {
-                    if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                    // Get content — fallback to transcript_full if truncated
+                    let step_index = val.get("step_index").and_then(|v| v.as_u64());
+                    let truncated = val.get("truncated_fields")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().any(|f| f.as_str() == Some("content")))
+                        .unwrap_or(false);
+
+                    let content_opt = if truncated {
+                        step_index
+                            .and_then(|idx| full_lines.get(&idx))
+                            .and_then(|fv| fv.get("content"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                    } else {
+                        val.get("content").and_then(|v| v.as_str()).map(|s| s.to_string())
+                    };
+
+                    if let Some(content) = content_opt {
                         if let Some(last_tool) = pending_tools.last_mut() {
                             let out = if content.len() > 20_000 {
                                 format!("{}... [truncated for mobile]", &content[..20_000])

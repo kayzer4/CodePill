@@ -402,9 +402,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         islandState: CodePillAttributes.ContentState?
     ) {
         self.currentConversationId = conversationId
-        if !messages.isEmpty {
-            self.messages = messages
-        }
+        self.messages = messages
         self.isExecuting = isBusy
         self.currentIslandState = islandState
         saveCache()
