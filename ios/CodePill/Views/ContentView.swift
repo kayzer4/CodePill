@@ -109,7 +109,7 @@ public struct ContentView: View {
             } label: {
                 Image(systemName: "arrow.uturn.backward")
                     .font(.caption.bold())
-                    .foregroundStyle(viewModel.isExecuting ? .secondary : .orange)
+                    .foregroundColor(viewModel.isExecuting ? Color.secondary : Color.orange)
             }
             .disabled(viewModel.isExecuting)
 
