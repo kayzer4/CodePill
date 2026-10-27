@@ -6,6 +6,7 @@ import SwiftUI
 public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     @Published public var messages: [ChatMessage] = []
     @Published public var inputText: String = ""
+    @Published public var attachments: [AttachmentItem] = []
     @Published public var isExecuting: Bool = false
     @Published public var currentIslandState: CodePillAttributes.ContentState?
     @Published public var selectedModel: String = "gemini-3.8-flash-medium"
@@ -29,12 +30,89 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         self.messages = [
             ChatMessage(
                 role: .system,
-                text: "💊 CodePill ready. Port: \(client.port). Liquid Glass session active."
+                text: "💊 CodePill ready. Port: \(client.port). Apple Dark Mode active."
             )
         ]
+        self.attachments = []
         self.currentIslandState = nil
         self.isExecuting = false
         Haptics.shared.impact(.light)
+    }
+
+    public func addAttachment(item: AttachmentItem) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            attachments.append(item)
+        }
+        Haptics.shared.impact(.light)
+    }
+
+    public func removeAttachment(id: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            attachments.removeAll(where: { $0.id == id })
+        }
+        Haptics.shared.impact(.light)
+    }
+
+    public func addPhotoData(_ data: Data, filename: String = "photo.jpg") {
+        let base64 = data.base64EncodedString()
+        let item = AttachmentItem(
+            name: filename,
+            mimeType: "image/jpeg",
+            base64Data: base64,
+            isImage: true
+        )
+        addAttachment(item: item)
+    }
+
+    public func addFileUrl(_ url: URL) {
+        let shouldStopAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if shouldStopAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        guard let data = try? Data(contentsOf: url) else { return }
+        let filename = url.lastPathComponent
+        let ext = url.pathExtension.lowercased()
+
+        let mimeType: String
+        let isImage: Bool
+        switch ext {
+        case "jpg", "jpeg":
+            mimeType = "image/jpeg"
+            isImage = true
+        case "png":
+            mimeType = "image/png"
+            isImage = true
+        case "gif":
+            mimeType = "image/gif"
+            isImage = true
+        case "webp":
+            mimeType = "image/webp"
+            isImage = true
+        case "pdf":
+            mimeType = "application/pdf"
+            isImage = false
+        case "json":
+            mimeType = "application/json"
+            isImage = false
+        case "swift", "rs", "py", "sh", "txt", "md", "toml", "yaml", "yml":
+            mimeType = "text/plain"
+            isImage = false
+        default:
+            mimeType = "application/octet-stream"
+            isImage = false
+        }
+
+        let base64 = data.base64EncodedString()
+        let item = AttachmentItem(
+            name: filename,
+            mimeType: mimeType,
+            base64Data: base64,
+            isImage: isImage
+        )
+        addAttachment(item: item)
     }
 
     public func selectConversation(_ item: ConversationItem) {
@@ -51,21 +129,32 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func sendMessage() {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
 
-        let userMsg = ChatMessage(role: .user, text: trimmed)
-        messages.append(userMsg)
+        let userMsg = ChatMessage(
+            role: .user,
+            text: trimmed,
+            attachments: attachments
+        )
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            messages.append(userMsg)
+        }
+        let currentAttachments = attachments
+        attachments = []
         inputText = ""
         isExecuting = true
 
         Haptics.shared.impact(.light)
 
         let assistantMsg = ChatMessage(role: .assistant, text: "")
-        messages.append(assistantMsg)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            messages.append(assistantMsg)
+        }
         currentAssistantMessageId = assistantMsg.id
 
         client.sendPrompt(
             trimmed,
+            attachments: currentAttachments,
             conversationId: currentConversationId,
             model: selectedModel
         )

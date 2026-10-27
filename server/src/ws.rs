@@ -66,6 +66,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     Ok(client_msg) => match client_msg {
                         ClientMessage::Prompt {
                             text,
+                            attachments,
                             workspace,
                             conversation_id,
                             model,
@@ -76,6 +77,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 if let Err(e) = mgr
                                     .start_turn(
                                         &text,
+                                        &attachments,
                                         conversation_id.as_deref(),
                                         workspace.as_deref(),
                                         model.as_deref(),

@@ -25,13 +25,24 @@ pub struct ConversationSummary {
     pub message_count: usize,
 }
 
+/// Attachment info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentPayload {
+    pub name: String,
+    pub mime_type: String,
+    pub base64_data: String,
+}
+
 /// Stored chat message on the server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredMessage {
     pub id: String,
     pub role: String,
     pub text: String,
+    #[serde(default)]
     pub tool_calls: Vec<StoredToolCall>,
+    #[serde(default)]
+    pub attachments: Vec<String>, // names or paths of saved attachments
     pub timestamp: String,
 }
 
@@ -40,9 +51,11 @@ pub struct StoredToolCall {
     pub id: String,
     pub name: String,
     pub summary: String,
+    pub parameters: Option<serde_json::Value>,
     pub output: Option<String>,
     pub is_running: bool,
     pub is_success: bool,
+    pub duration_seconds: Option<f64>,
 }
 
 /// Messages sent from the iOS client to CodePill server
@@ -53,6 +66,8 @@ pub enum ClientMessage {
     #[serde(rename = "prompt")]
     Prompt {
         text: String,
+        #[serde(default)]
+        attachments: Vec<AttachmentPayload>,
         #[serde(default)]
         workspace: Option<String>,
         #[serde(default)]
@@ -132,6 +147,7 @@ pub enum ServerMessage {
         call_id: String,
         tool_name: String,
         summary: String,
+        parameters: Option<serde_json::Value>,
     },
 
     #[serde(rename = "tool_end")]
@@ -139,6 +155,8 @@ pub enum ServerMessage {
         call_id: String,
         success: bool,
         output_preview: String,
+        full_output: Option<String>,
+        duration_seconds: Option<f64>,
     },
 
     #[serde(rename = "island_update")]

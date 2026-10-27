@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
+use base64::Engine;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -8,7 +10,8 @@ use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 
 use crate::protocol::{
-    ConversationSummary, DynamicIslandState, ServerMessage, StoredMessage, StoredToolCall,
+    AttachmentPayload, ConversationSummary, DynamicIslandState, ServerMessage, StoredMessage,
+    StoredToolCall,
 };
 use crate::proxy::ProxyManager;
 
@@ -72,14 +75,12 @@ impl SessionManager {
         if let Some(conv) = convs.get_mut(conversation_id) {
             let mut restored_prompt = None;
 
-            // Remove last assistant message
             if let Some(last) = conv.messages.last() {
                 if last.role == "assistant" {
                     conv.messages.pop();
                 }
             }
 
-            // Remove and retrieve last user prompt
             if let Some(last) = conv.messages.last() {
                 if last.role == "user" {
                     restored_prompt = Some(last.text.clone());
@@ -99,6 +100,7 @@ impl SessionManager {
     pub async fn start_turn(
         &self,
         prompt: &str,
+        attachments: &[AttachmentPayload],
         conversation_id: Option<&str>,
         workspace_override: Option<&str>,
         model_override: Option<&str>,
@@ -109,6 +111,28 @@ impl SessionManager {
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let now_str = chrono_or_simple_time();
+
+        // Process attachments (save base64 to workspace disk so agy can inspect them)
+        let mut saved_attachment_names = Vec::new();
+        let mut enriched_prompt = prompt.to_string();
+
+        if !attachments.is_empty() {
+            let attach_dir = PathBuf::from(cwd).join(".codepill_attachments");
+            let _ = tokio::fs::create_dir_all(&attach_dir).await;
+
+            for att in attachments {
+                saved_attachment_names.push(att.name.clone());
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(att.base64_data.as_bytes()) {
+                    let file_path = attach_dir.join(&att.name);
+                    let _ = tokio::fs::write(&file_path, bytes).await;
+                    info!("Saved attachment to {}", file_path.display());
+                    enriched_prompt.push_str(&format!(
+                        "\n[User attached file/image: {}]",
+                        file_path.display()
+                    ));
+                }
+            }
+        }
 
         // Initialize or update conversation state
         {
@@ -131,6 +155,7 @@ impl SessionManager {
                 role: "user".to_string(),
                 text: prompt.to_string(),
                 tool_calls: Vec::new(),
+                attachments: saved_attachment_names,
                 timestamp: now_str.clone(),
             });
 
@@ -140,6 +165,7 @@ impl SessionManager {
                 role: "assistant".to_string(),
                 text: String::new(),
                 tool_calls: Vec::new(),
+                attachments: Vec::new(),
                 timestamp: now_str.clone(),
             });
         }
@@ -147,7 +173,7 @@ impl SessionManager {
         let mut cmd = Command::new(&self.agy_binary);
         cmd.current_dir(cwd)
             .arg("-p")
-            .arg(prompt)
+            .arg(&enriched_prompt)
             .arg("--output-format")
             .arg("stream-json")
             .stdout(Stdio::piped())
@@ -308,11 +334,11 @@ impl SessionManager {
                 if let Some(step) = val.get("step_update") {
                     let step_type = step.get("step_type").and_then(|v| v.as_str()).unwrap_or("");
                     let state = step.get("state").and_then(|v| v.as_str()).unwrap_or("");
+                    let duration = step.get("duration_seconds").and_then(|d| d.as_f64());
 
                     // STREAMING TOKEN EXTRACTION
                     if let Some(text_delta) = step.get("text_delta").and_then(|v| v.as_str()) {
                         if !text_delta.is_empty() {
-                            // Append to in-memory message history
                             {
                                 let mut map = convs.write().await;
                                 if let Some(c) = map.get_mut(conv_id) {
@@ -324,7 +350,6 @@ impl SessionManager {
                                 }
                             }
 
-                            // Broadcast live streaming token to client
                             let _ = tx.send((
                                 conv_id.to_string(),
                                 ServerMessage::TokenChunk {
@@ -338,6 +363,7 @@ impl SessionManager {
                         "tool" => {
                             let tool_name = step.get("tool_name").and_then(|v| v.as_str()).unwrap_or("unknown");
                             let tool_info = step.get("tool_info");
+                            let params = tool_info.and_then(|i| i.get("parameters")).cloned();
 
                             if state == "ACTIVE" {
                                 let desc = match tool_name {
@@ -354,7 +380,15 @@ impl SessionManager {
                                             .and_then(|i| i.pointer("/parameters/CommandLine"))
                                             .and_then(|c| c.as_str())
                                             .unwrap_or("bash");
-                                        format!("Run: {}", truncate(cmd, 25))
+                                        format!("Run: {}", truncate(cmd, 30))
+                                    }
+                                    "view_file" => {
+                                        let path = tool_info
+                                            .and_then(|i| i.pointer("/parameters/Path"))
+                                            .and_then(|p| p.as_str())
+                                            .and_then(|p| p.split('/').last())
+                                            .unwrap_or("file");
+                                        format!("Reading {}", path)
                                     }
                                     "search_web" => "Searching web".to_string(),
                                     other => format!("Tool: {}", other),
@@ -384,9 +418,11 @@ impl SessionManager {
                                                     id: uuid::Uuid::new_v4().to_string(),
                                                     name: tool_name.to_string(),
                                                     summary: desc.clone(),
+                                                    parameters: params.clone(),
                                                     output: None,
                                                     is_running: true,
                                                     is_success: false,
+                                                    duration_seconds: None,
                                                 });
                                             }
                                         }
@@ -404,6 +440,7 @@ impl SessionManager {
                                         call_id: uuid::Uuid::new_v4().to_string(),
                                         tool_name: tool_name.to_string(),
                                         summary: desc,
+                                        parameters: params,
                                     },
                                 ));
                             } else if state == "DONE" {
@@ -422,6 +459,7 @@ impl SessionManager {
                                                     t.is_running = false;
                                                     t.is_success = true;
                                                     t.output = Some(output.clone());
+                                                    t.duration_seconds = duration;
                                                 }
                                             }
                                         }
@@ -434,6 +472,8 @@ impl SessionManager {
                                         call_id: "".to_string(),
                                         success: true,
                                         output_preview: truncate(&output, 100),
+                                        full_output: Some(output),
+                                        duration_seconds: duration,
                                     },
                                 ));
                             }
@@ -457,7 +497,6 @@ impl SessionManager {
                 }
             }
             "result" => {
-                // If there's final response text and it hasn't been appended yet, ensure it is set
                 if let Some(res) = val.get("result") {
                     let response_text = res.get("response").and_then(|v| v.as_str()).unwrap_or("");
                     if !response_text.is_empty() {

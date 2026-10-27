@@ -6,30 +6,59 @@ public enum MessageRole: String, Codable {
     case system
 }
 
-public struct ToolCallItem: Identifiable, Codable, Hashable {
+public struct AttachmentItem: Identifiable, Hashable {
+    public let id: String
+    public let name: String
+    public let mimeType: String
+    public let base64Data: String
+    public let isImage: Bool
+
+    public init(
+        id: String = UUID().uuidString,
+        name: String,
+        mimeType: String,
+        base64Data: String,
+        isImage: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.mimeType = mimeType
+        self.base64Data = base64Data
+        self.isImage = isImage
+    }
+}
+
+public struct ToolCallItem: Identifiable, Hashable {
     public let id: String
     public let name: String
     public var summary: String
     public var output: String?
-    public var isRunning: bool_alias
+    public var fullOutput: String?
+    public var parametersText: String?
+    public var isRunning: Bool
     public var isSuccess: Bool
-
-    public typealias bool_alias = Bool
+    public var duration: Double?
 
     public init(
         id: String = UUID().uuidString,
         name: String,
         summary: String,
         output: String? = nil,
+        fullOutput: String? = nil,
+        parametersText: String? = nil,
         isRunning: Bool = true,
-        isSuccess: Bool = false
+        isSuccess: Bool = false,
+        duration: Double? = nil
     ) {
         self.id = id
         self.name = name
         self.summary = summary
         self.output = output
+        self.fullOutput = fullOutput
+        self.parametersText = parametersText
         self.isRunning = isRunning
         self.isSuccess = isSuccess
+        self.duration = duration
     }
 }
 
@@ -38,6 +67,7 @@ public struct ChatMessage: Identifiable, Hashable {
     public let role: MessageRole
     public var text: String
     public var toolCalls: [ToolCallItem]
+    public var attachments: [AttachmentItem]
     public let timestamp: Date
 
     public init(
@@ -45,12 +75,14 @@ public struct ChatMessage: Identifiable, Hashable {
         role: MessageRole,
         text: String = "",
         toolCalls: [ToolCallItem] = [],
+        attachments: [AttachmentItem] = [],
         timestamp: Date = Date()
     ) {
         self.id = id
         self.role = role
         self.text = text
         self.toolCalls = toolCalls
+        self.attachments = attachments
         self.timestamp = timestamp
     }
 }

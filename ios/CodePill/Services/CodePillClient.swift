@@ -8,8 +8,8 @@ public protocol CodePillClientDelegate: AnyObject {
     func clientDidDisconnect(error: Error?)
     func didReceiveTokenChunk(_ chunk: String)
     func didUpdateIsland(state: CodePillAttributes.ContentState)
-    func didStartTool(callId: String, name: String, summary: String)
-    func didEndTool(callId: String, success: Bool, output: String)
+    func didStartTool(callId: String, name: String, summary: String, parametersText: String?)
+    func didEndTool(callId: String, success: Bool, output: String, fullOutput: String?, duration: Double?)
     func didFinishTurn(conversationId: String, success: Bool, summary: String?)
     func didSyncHistory(conversationId: String, messages: [ChatMessage], isBusy: Bool, islandState: CodePillAttributes.ContentState?)
     func didCompleteRollback(conversationId: String, messages: [ChatMessage], restoredPrompt: String?)
@@ -163,6 +163,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
 
     public func sendPrompt(
         _ text: String,
+        attachments: [AttachmentItem] = [],
         workspace: String? = nil,
         conversationId: String? = nil,
         model: String? = nil,
@@ -174,6 +175,17 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         if let workspace = workspace { payload["workspace"] = workspace }
         if let conversationId = conversationId { payload["conversation_id"] = conversationId }
         if let model = model { payload["model"] = model }
+
+        if !attachments.isEmpty {
+            let attachList: [[String: String]] = attachments.map { a in
+                [
+                    "name": a.name,
+                    "mime_type": a.mimeType,
+                    "base64_data": a.base64Data
+                ]
+            }
+            payload["attachments"] = attachList
+        }
 
         let envelope: [String: Any] = [
             "type": "prompt",
@@ -294,13 +306,21 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
             let callId = payload["call_id"] as? String ?? UUID().uuidString
             let name = payload["tool_name"] as? String ?? "tool"
             let summary = payload["summary"] as? String ?? ""
-            delegate?.didStartTool(callId: callId, name: name, summary: summary)
+            var paramsString: String? = nil
+            if let params = payload["parameters"] {
+                if let data = try? JSONSerialization.data(withJSONObject: params, options: .prettyPrinted) {
+                    paramsString = String(data: data, encoding: .utf8)
+                }
+            }
+            delegate?.didStartTool(callId: callId, name: name, summary: summary, parametersText: paramsString)
 
         case "tool_end":
             let callId = payload["call_id"] as? String ?? ""
             let success = payload["success"] as? Bool ?? true
             let output = payload["output_preview"] as? String ?? ""
-            delegate?.didEndTool(callId: callId, success: success, output: output)
+            let fullOutput = payload["full_output"] as? String ?? output
+            let duration = payload["duration_seconds"] as? Double
+            delegate?.didEndTool(callId: callId, success: success, output: output, fullOutput: fullOutput, duration: duration)
 
         case "turn_finished":
             let convId = payload["conversation_id"] as? String ?? ""

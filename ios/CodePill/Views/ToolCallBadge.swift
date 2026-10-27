@@ -2,54 +2,62 @@ import SwiftUI
 
 public struct ToolCallBadge: View {
     public let item: ToolCallItem
-    @State private var isExpanded: Bool = false
+    @State private var showDetails: Bool = false
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    if item.isRunning {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .scaleEffect(0.65)
-                    } else {
-                        Image(systemName: item.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(item.isSuccess ? .green : .red)
-                            .font(.caption)
-                    }
+        Button {
+            showDetails = true
+            Haptics.shared.selection()
+        } label: {
+            HStack(spacing: 8) {
+                // Tool specific icon
+                Image(systemName: iconForTool(item.name))
+                    .font(.caption2)
+                    .foregroundStyle(item.isRunning ? .orange : (item.isSuccess ? .green : .red))
 
-                    Text(item.summary)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                Text(item.summary)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
 
-                    Spacer()
+                Spacer()
 
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color(UIColor.tertiarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            .buttonStyle(.plain)
-
-            if isExpanded, let output = item.output, !output.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(output)
+                if item.isRunning {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .scaleEffect(0.6)
+                } else if let dur = item.duration {
+                    Text(String(format: "%.1fs", dur))
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
-                        .padding(8)
                 }
-                .background(Color.black.opacity(0.3))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(UIColor.tertiarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showDetails) {
+            ToolDetailSheet(item: item)
+        }
+    }
+
+    private func iconForTool(_ name: String) -> String {
+        switch name {
+        case "run_command": return "terminal.fill"
+        case "write_to_file", "replace_file_content": return "pencil.and.outline"
+        case "view_file": return "eye.fill"
+        case "search_web": return "globe"
+        default: return "gearshape.fill"
         }
     }
 }

@@ -16,6 +16,11 @@ public struct MessageRow: View {
             }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+                // Attachments if any
+                if !message.attachments.isEmpty {
+                    attachmentsView
+                }
+
                 // Tool calls
                 if !message.toolCalls.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -63,6 +68,43 @@ public struct MessageRow: View {
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
         .padding(.horizontal, 14)
+    }
+
+    @ViewBuilder
+    private var attachmentsView: some View {
+        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+            ForEach(message.attachments) { att in
+                if att.isImage, let data = Data(base64Encoded: att.base64Data), let uiImage = UIImage(data: data) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 220, maxHeight: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                } else {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.purple)
+                        Text(att.name)
+                            .font(.caption.bold())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+                }
+            }
+        }
     }
 
     private var textColor: Color {
