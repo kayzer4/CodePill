@@ -41,6 +41,32 @@ public struct ContentView: View {
                     ZStack(alignment: .bottomTrailing) {
                         ScrollView {
                             VStack(spacing: 12) {
+                                // Кнопка "загрузить ещё" вверху списка
+                                if viewModel.canLoadMore {
+                                    Button {
+                                        viewModel.loadMoreMessages()
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            if viewModel.isLoadingMore {
+                                                ProgressView().scaleEffect(0.7)
+                                            } else {
+                                                Image(systemName: "arrow.up.circle")
+                                            }
+                                            Text(viewModel.isLoadingMore ? "Загрузка..." : "Загрузить ещё")
+                                                .font(.system(size: 13, weight: .medium))
+                                        }
+                                        .foregroundStyle(.secondary)
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 16)
+                                        .liquidGlass(cornerRadius: 14)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.top, 4)
+                                    .onAppear {
+                                        // Автоподгрузка при скролле к самому верху
+                                        viewModel.loadMoreMessages()
+                                    }
+                                }
                                 ForEach(viewModel.messages) { msg in
                                     MessageRow(
                                         message: msg,

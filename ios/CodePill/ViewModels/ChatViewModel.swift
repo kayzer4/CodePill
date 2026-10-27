@@ -4,7 +4,9 @@ import SwiftUI
 
 @MainActor
 public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
-    @Published public var messages: [ChatMessage] = []
+    @Published public var messages: [ChatMessage] = []       // displayed (paginated)
+    @Published public var canLoadMore: Bool = false          // есть ли ещё сообщения выше
+    @Published public var isLoadingMore: Bool = false        // индикатор подгрузки
     @Published public var inputText: String = ""
     @Published public var attachments: [AttachmentItem] = []
     @Published public var isExecuting: Bool = false
@@ -19,8 +21,33 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     @Published public var isDownloadingFile: Bool = false
     @Published public var downloadError: String? = nil
 
+    private var allMessages: [ChatMessage] = []              // полный список
+    private let pageSize: Int = 30                           // сколько показывать за раз
+    private var displayedCount: Int = 30
+
     public let client: CodePillClient
     private var currentAssistantMessageId: UUID?
+
+    /// Подгрузить ещё сообщения при скролле вверх
+    public func loadMoreMessages() {
+        guard canLoadMore, !isLoadingMore else { return }
+        isLoadingMore = true
+        Haptics.shared.impact(.light)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.displayedCount = min(self.displayedCount + self.pageSize, self.allMessages.count)
+            self.messages = Array(self.allMessages.suffix(self.displayedCount))
+            self.canLoadMore = self.displayedCount < self.allMessages.count
+            self.isLoadingMore = false
+        }
+    }
+
+    /// Установить полный список и показать только последние pageSize
+    private func applyMessages(_ newMessages: [ChatMessage]) {
+        allMessages = newMessages
+        displayedCount = min(pageSize, newMessages.count)
+        messages = Array(allMessages.suffix(displayedCount))
+        canLoadMore = displayedCount < allMessages.count
+    }
 
     public init(client: CodePillClient) {
         self.client = client
@@ -35,7 +62,9 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func startNewChat() {
         self.currentConversationId = UUID().uuidString
+        self.allMessages = []
         self.messages = []
+        self.canLoadMore = false
         self.attachments = []
         self.currentIslandState = nil
         self.isExecuting = false
@@ -74,11 +103,11 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(savedConvId).json")
             if let data = try? Data(contentsOf: messagesFile),
                let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
-                self.messages = list
+                applyMessages(list)
                 return
             }
         }
-        self.messages = []
+        applyMessages([])
     }
 
     public func addAttachment(item: AttachmentItem) {
@@ -159,11 +188,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func selectConversation(_ item: ConversationItem) {
         self.currentConversationId = item.id
-        // Immediately try to load cached messages for this conversation if available
         let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(item.id).json")
         if let data = try? Data(contentsOf: messagesFile),
            let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
-            self.messages = list
+            applyMessages(list)
         }
         client.sendSync(conversationId: item.id)
         Haptics.shared.selection()
@@ -402,7 +430,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         islandState: CodePillAttributes.ContentState?
     ) {
         self.currentConversationId = conversationId
-        self.messages = messages
+        applyMessages(messages)
         self.isExecuting = isBusy
         self.currentIslandState = islandState
         saveCache()
