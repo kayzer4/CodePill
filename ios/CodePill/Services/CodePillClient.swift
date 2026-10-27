@@ -22,6 +22,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     public weak var delegate: CodePillClientDelegate?
 
     @Published public var isConnected: Bool = false
+    @Published public var lastErrorMessage: String? = nil
     @Published public var host: String {
         didSet { UserDefaults.standard.set(host, forKey: "codepill_host") }
     }
@@ -35,6 +36,36 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     private var activeConversationId: String?
     private var pingTimer: Timer?
     private var isExplicitDisconnect: Bool = false
+
+    public static func cleanHost(_ raw: String) -> String {
+        var str = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if str.hasPrefix("http://") { str = String(str.dropFirst(7)) }
+        if str.hasPrefix("https://") { str = String(str.dropFirst(8)) }
+        if str.hasPrefix("ws://") { str = String(str.dropFirst(5)) }
+        if str.hasPrefix("wss://") { str = String(str.dropFirst(6)) }
+        if let slashIdx = str.firstIndex(of: "/") {
+            str = String(str[..<slashIdx])
+        }
+        if let colonIdx = str.lastIndex(of: ":") {
+            str = String(str[..<colonIdx])
+        }
+        return str.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public static func extractPort(_ raw: String) -> Int? {
+        var str = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if str.hasPrefix("http://") { str = String(str.dropFirst(7)) }
+        if str.hasPrefix("https://") { str = String(str.dropFirst(8)) }
+        if str.hasPrefix("ws://") { str = String(str.dropFirst(5)) }
+        if str.hasPrefix("wss://") { str = String(str.dropFirst(6)) }
+        if let slashIdx = str.firstIndex(of: "/") {
+            str = String(str[..<slashIdx])
+        }
+        if let colonIdx = str.lastIndex(of: ":") {
+            return Int(str[str.index(after: colonIdx)...])
+        }
+        return nil
+    }
 
     public override init() {
         self.host = UserDefaults.standard.string(forKey: "codepill_host") ?? "100.120.17.25"
@@ -59,11 +90,13 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     }
 
     public var baseURL: URL {
-        URL(string: "http://\(host):\(port)")!
+        let clean = Self.cleanHost(host)
+        return URL(string: "http://\(clean):\(port)") ?? URL(string: "http://100.120.17.25:44321")!
     }
 
     public var wsURL: URL {
-        URL(string: "ws://\(host):\(port)/ws")!
+        let clean = Self.cleanHost(host)
+        return URL(string: "ws://\(clean):\(port)/ws") ?? URL(string: "ws://100.120.17.25:44321/ws")!
     }
 
     // MARK: - Connection Management
@@ -129,6 +162,24 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
             self.pingTimer = nil
             if !self.isExplicitDisconnect {
                 self.scheduleReconnect()
+            }
+        }
+    }
+
+    public nonisolated func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error = error {
+            print("[CodePill] WebSocket task failed with error: \(error)")
+            Task { @MainActor in
+                self.isConnected = false
+                self.lastErrorMessage = error.localizedDescription
+                self.delegate?.clientDidDisconnect(error: error)
+                if !self.isExplicitDisconnect {
+                    self.scheduleReconnect()
+                }
             }
         }
     }

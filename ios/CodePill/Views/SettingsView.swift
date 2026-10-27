@@ -56,8 +56,15 @@ public struct SettingsView: View {
 
                     HStack {
                         Button(client.isConnected ? "Reconnect" : "Connect") {
-                            client.host = hostInput
-                            if let p = Int(portInput) { client.port = p }
+                            let clean = CodePillClient.cleanHost(hostInput)
+                            if let extracted = CodePillClient.extractPort(hostInput) {
+                                client.port = extracted
+                                portInput = String(extracted)
+                            } else if let p = Int(portInput.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                                client.port = p
+                            }
+                            client.host = clean
+                            hostInput = clean
                             client.connect()
                             Task { await loadData() }
                         }
@@ -73,6 +80,12 @@ public struct SettingsView: View {
                                 .font(.caption.bold())
                                 .foregroundColor(client.isConnected ? Color.green : Color.secondary)
                         }
+                    }
+
+                    if !client.isConnected, let err = client.lastErrorMessage {
+                        Text("Error: \(err)")
+                            .font(.caption2)
+                            .foregroundStyle(.red)
                     }
                 }
 
