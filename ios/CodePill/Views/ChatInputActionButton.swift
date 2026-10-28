@@ -6,9 +6,6 @@ public struct ChatInputActionButton: View {
     public let onSend: () -> Void
     public let onCancel: () -> Void
 
-    @State private var phase: Double = 0
-    @State private var ambientGlow: Bool = false
-
     public init(
         isExecuting: Bool,
         canSend: Bool,
@@ -33,56 +30,60 @@ public struct ChatInputActionButton: View {
         } label: {
             ZStack {
                 if isExecuting {
-                    // Строгое элегантное свечение (Soft minimal monochromatic aura)
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    Color.accentColor.opacity(0.35),
-                                    Color.accentColor.opacity(0.08),
-                                    Color.clear
-                                ],
-                                center: .center,
-                                startRadius: 10,
-                                endRadius: ambientGlow ? 22 : 16
-                            )
-                        )
-                        .frame(width: 44, height: 44)
-                        .animation(
-                            .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
-                            value: ambientGlow
-                        )
+                    // TimelineView ensures active 60fps frame rendering without getting blocked by state updates
+                    TimelineView(.animation) { timeline in
+                        let time = timeline.date.timeIntervalSinceReferenceDate
+                        let angle = (time.truncatingRemainder(dividingBy: 2.5)) / 2.5 * 360.0
+                        let pulse = 0.85 + 0.15 * sin(time * 3.0)
 
-                    // 4 аккуратные орбитальные точки в стиле Claude / минимализм
-                    ForEach(0..<4) { index in
-                        let angle = Double(index) * 90.0 + phase
-                        Circle()
-                            .fill(Color.accentColor.opacity(0.85))
-                            .frame(width: 3.2, height: 3.2)
-                            .shadow(color: Color.accentColor.opacity(0.8), radius: 3, x: 0, y: 0)
-                            .offset(
-                                x: 15 * cos(angle * .pi / 180),
-                                y: 15 * sin(angle * .pi / 180)
-                            )
+                        ZStack {
+                            // Monochromatic soft ambient aura
+                            Circle()
+                                .fill(
+                                    RadialGradient(
+                                        colors: [
+                                            Color.accentColor.opacity(0.35 * pulse),
+                                            Color.accentColor.opacity(0.08),
+                                            Color.clear
+                                        ],
+                                        center: .center,
+                                        startRadius: 8,
+                                        endRadius: 22
+                                    )
+                                )
+                                .frame(width: 44, height: 44)
+
+                            // 4 moving orbital glowing dots in Claude style
+                            ForEach(0..<4) { index in
+                                let itemAngle = angle + Double(index) * 90.0
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 3.2, height: 3.2)
+                                    .shadow(color: Color.accentColor.opacity(0.85), radius: 3, x: 0, y: 0)
+                                    .offset(
+                                        x: 15 * cos(itemAngle * .pi / 180),
+                                        y: 15 * sin(itemAngle * .pi / 180)
+                                    )
+                            }
+
+                            // Thin guide circle
+                            Circle()
+                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1.2)
+                                .frame(width: 30, height: 30)
+
+                            // Glass center disc
+                            Circle()
+                                .fill(Color(UIColor.secondarySystemBackground).opacity(0.9))
+                                .frame(width: 24, height: 24)
+
+                            // Stop icon square
+                            RoundedRectangle(cornerRadius: 2.8, style: .continuous)
+                                .fill(Color.primary)
+                                .frame(width: 9, height: 9)
+                        }
                     }
-
-                    // Тонкая полупрозрачная окружность
-                    Circle()
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1.2)
-                        .frame(width: 30, height: 30)
-
-                    // Стеклянная подложка кнопки «Стоп»
-                    Circle()
-                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.85))
-                        .frame(width: 24, height: 24)
-
-                    // Строгий квадрат «Стоп»
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.primary)
-                        .frame(width: 9, height: 9)
-                        .shadow(color: Color.black.opacity(0.2), radius: 1.5, x: 0, y: 0.5)
                 } else {
-                    // Standard Send Arrow with elegant accent glow
+                    // Standard Send Arrow with soft dynamic accent glow when active
                     Circle()
                         .fill(
                             canSend
@@ -115,24 +116,5 @@ public struct ChatInputActionButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!isExecuting && !canSend)
-        .onAppear {
-            if isExecuting {
-                startAnimations()
-            }
-        }
-        .onChange(of: isExecuting) { executing in
-            if executing {
-                startAnimations()
-            } else {
-                ambientGlow = false
-            }
-        }
-    }
-
-    private func startAnimations() {
-        ambientGlow = true
-        withAnimation(.linear(duration: 2.2).repeatForever(autoreverses: false)) {
-            phase = 360
-        }
     }
 }

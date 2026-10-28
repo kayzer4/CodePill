@@ -30,14 +30,10 @@ public struct MessageRow: View {
                     attachmentsView
                 }
 
-                // Tool calls (show even if text is empty!)
+                // Tool calls grouped in a collapsible accordion
                 if !message.toolCalls.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(message.toolCalls) { tool in
-                            ToolCallBadge(item: tool)
-                        }
-                    }
-                    .padding(.vertical, 2)
+                    CompactToolsAccordion(toolCalls: message.toolCalls)
+                        .padding(.vertical, 2)
                 }
 
                 // Message bubble or typing loader

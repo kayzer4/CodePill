@@ -705,7 +705,13 @@ impl SessionManager {
                                     let mut map = convs.write().await;
                                     if let Some(c) = map.get_mut(conv_id) {
                                         c.current_island_state = Some(island_state.clone());
-                                        if c.messages.last().map(|m| m.role.as_str()) != Some("assistant") {
+                                        // Если последнее сообщение ассистента уже содержит текст,
+                                        // создаем новое сообщение для следующей пачки инструментов!
+                                        let needs_new_msg = match c.messages.last() {
+                                            Some(m) => m.role != "assistant" || !m.text.trim().is_empty(),
+                                            None => true,
+                                        };
+                                        if needs_new_msg {
                                             c.messages.push(StoredMessage {
                                                 id: uuid::Uuid::new_v4().to_string(),
                                                 role: "assistant".to_string(),
@@ -805,17 +811,30 @@ impl SessionManager {
                     if !response_text.is_empty() {
                         let mut map = convs.write().await;
                         if let Some(c) = map.get_mut(conv_id) {
-                            if let Some(last) = c.messages.last_mut() {
-                                if last.role == "assistant" && last.text.is_empty() {
-                                    last.text = response_text.to_string();
-                                    let _ = tx.send((
-                                        conv_id.to_string(),
-                                        ServerMessage::TokenChunk {
-                                            text: response_text.to_string(),
-                                        },
-                                    ));
-                                }
+                            // Проверяем: если последнее сообщение уже имеет другой текст (например промежуточный ответ),
+                            // создаем для финального результата отдельное сообщение!
+                            let needs_new_msg = match c.messages.last() {
+                                Some(m) => m.role != "assistant" || !m.text.is_empty(),
+                                None => true,
+                            };
+                            if needs_new_msg {
+                                c.messages.push(StoredMessage {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    role: "assistant".to_string(),
+                                    text: response_text.to_string(),
+                                    tool_calls: Vec::new(),
+                                    attachments: Vec::new(),
+                                    timestamp: chrono_or_simple_time(),
+                                });
+                            } else if let Some(last) = c.messages.last_mut() {
+                                last.text = response_text.to_string();
                             }
+                            let _ = tx.send((
+                                conv_id.to_string(),
+                                ServerMessage::TokenChunk {
+                                    text: response_text.to_string(),
+                                },
+                            ));
                         }
                     }
                 }

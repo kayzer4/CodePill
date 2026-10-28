@@ -420,55 +420,53 @@ public struct ContentView: View {
         .frame(width: drawerWidth)
         .offset(x: currentX)
         .shadow(color: Color.black.opacity(showSideDrawer ? 0.35 : 0), radius: 16, x: 6, y: 0)
-    }
-    // Universal simultaneous gesture that handles both horizontal swipe and lets vertical scroll pass through
-    .simultaneousGesture(
-        DragGesture(minimumDistance: 15, coordinateSpace: .local)
-            .onChanged { value in
-                let translationX = value.translation.width
-                let translationY = value.translation.height
-
-                // Filter out vertical scrolling: only track if movement is predominantly horizontal
-                guard abs(translationX) > abs(translationY) * 1.2 else { return }
-
-                if !showSideDrawer {
-                    // Pulling from left side (start in left 45% of screen, moving right)
-                    if value.startLocation.x < UIScreen.main.bounds.width * 0.45 && translationX > 0 {
-                        dragOffset = min(drawerWidth, translationX)
-                    }
-                } else {
-                    // Pushing back to close (moving left)
-                    if translationX < 0 {
-                        dragOffset = max(-drawerWidth, translationX)
+        // High-priority gesture on the drawer itself to close smoothly
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    let translation = value.translation.width
+                    if translation < 0 {
+                        dragOffset = max(-drawerWidth, translation)
                     }
                 }
-            }
-            .onEnded { value in
-                let translationX = value.translation.width
-                let translationY = value.translation.height
-                let velocity = value.predictedEndTranslation.width
-
-                guard abs(translationX) > abs(translationY) * 0.8 else {
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                        dragOffset = 0
-                    }
-                    return
-                }
-
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                    if !showSideDrawer {
-                        if dragOffset > 60 || velocity > 150 {
-                            showSideDrawer = true
-                        }
-                    } else {
-                        if dragOffset < -60 || velocity < -150 {
+                .onEnded { value in
+                    let velocity = value.predictedEndTranslation.width
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        if dragOffset < -50 || velocity < -120 {
                             showSideDrawer = false
                         }
+                        dragOffset = 0
                     }
-                    dragOffset = 0
                 }
-            }
-    )
+        )
+
+        // Native left-edge swipe zone (strictly detects horizontal swipe from left 30pt edge)
+        if !showSideDrawer {
+            Color.clear
+                .frame(width: 30)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 10, coordinateSpace: .local)
+                        .onChanged { value in
+                            let x = value.translation.width
+                            let y = value.translation.height
+                            // Only activate if horizontal
+                            if x > 0 && x > abs(y) * 1.2 {
+                                dragOffset = min(drawerWidth, x)
+                            }
+                        }
+                        .onEnded { value in
+                            let velocity = value.predictedEndTranslation.width
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                if dragOffset > 50 || velocity > 120 {
+                                    showSideDrawer = true
+                                }
+                                dragOffset = 0
+                            }
+                        }
+                )
+        }
+    }
 }
 
     private var currentConversationTitle: String {
