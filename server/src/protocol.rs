@@ -132,6 +132,8 @@ pub struct DynamicIslandState {
     pub step_description: String,
     pub is_busy: bool,
     pub needs_approval: bool,
+    #[serde(default)]
+    pub conversation_id: Option<String>,
 }
 
 /// Messages sent from CodePill server to the iOS client
@@ -148,11 +150,15 @@ pub enum ServerMessage {
     #[serde(rename = "token_chunk")]
     TokenChunk {
         text: String,
+        #[serde(default)]
+        conversation_id: Option<String>,
     },
 
     #[serde(rename = "thought_chunk")]
     ThoughtChunk {
         text: String,
+        #[serde(default)]
+        conversation_id: Option<String>,
     },
 
     #[serde(rename = "tool_start")]
@@ -161,6 +167,8 @@ pub enum ServerMessage {
         tool_name: String,
         summary: String,
         parameters: Option<serde_json::Value>,
+        #[serde(default)]
+        conversation_id: Option<String>,
     },
 
     #[serde(rename = "tool_end")]
@@ -170,6 +178,8 @@ pub enum ServerMessage {
         output_preview: String,
         full_output: Option<String>,
         duration_seconds: Option<f64>,
+        #[serde(default)]
+        conversation_id: Option<String>,
     },
 
     #[serde(rename = "island_update")]

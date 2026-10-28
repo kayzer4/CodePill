@@ -90,6 +90,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         self.isExplicitNewChat = true
         self.currentConversationId = UUID().uuidString
         self.client.activeConversationId = self.currentConversationId
+        self.currentAssistantMessageId = nil
         self.allMessages = []
         self.messages = []
         self.canLoadMore = false
@@ -232,6 +233,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         self.isExplicitNewChat = false
         self.currentConversationId = item.id
         client.activeConversationId = item.id
+        self.currentAssistantMessageId = nil
         let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(item.id).json")
         if let data = try? Data(contentsOf: messagesFile),
            let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
@@ -436,7 +438,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         Haptics.shared.notify(.error)
     }
 
-    public func didReceiveTokenChunk(_ chunk: String) {
+    public func didReceiveTokenChunk(_ chunk: String, conversationId: String?) {
+        if let targetConvId = conversationId, let current = currentConversationId, targetConvId != current {
+            return
+        }
         if let id = currentAssistantMessageId,
            let idx = messages.firstIndex(where: { $0.id == id }) {
             messages[idx].text += chunk
@@ -450,13 +455,19 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         }
     }
 
-    public func didUpdateIsland(state: CodePillAttributes.ContentState) {
+    public func didUpdateIsland(state: CodePillAttributes.ContentState, conversationId: String?) {
+        if let targetConvId = conversationId, let current = currentConversationId, targetConvId != current {
+            return
+        }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
             self.currentIslandState = state
         }
     }
 
-    public func didStartTool(callId: String, name: String, summary: String, parametersText: String?) {
+    public func didStartTool(callId: String, name: String, summary: String, parametersText: String?, conversationId: String?) {
+        if let targetConvId = conversationId, let current = currentConversationId, targetConvId != current {
+            return
+        }
         let item = ToolCallItem(
             id: callId,
             name: name,
@@ -488,7 +499,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         Haptics.shared.impact(.light)
     }
 
-    public func didEndTool(callId: String, success: Bool, output: String, fullOutput: String?, duration: Double?) {
+    public func didEndTool(callId: String, success: Bool, output: String, fullOutput: String?, duration: Double?, conversationId: String?) {
+        if let targetConvId = conversationId, let current = currentConversationId, targetConvId != current {
+            return
+        }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             var updated = false
             for mIdx in messages.indices.reversed() {
@@ -516,6 +530,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     }
 
     public func didFinishTurn(conversationId: String, success: Bool, summary: String?) {
+        if let current = currentConversationId, conversationId != current {
+            client.requestConversationsList()
+            return
+        }
         isExecuting = false
         currentAssistantMessageId = nil
         currentIslandState = nil
@@ -534,6 +552,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         isBusy: Bool,
         islandState: CodePillAttributes.ContentState?
     ) {
+        if let current = currentConversationId, !current.isEmpty, current != conversationId {
+            print("[CodePill] Ignoring stale didSyncHistory for \(conversationId), currently on \(current)")
+            return
+        }
         self.currentConversationId = conversationId
         self.client.activeConversationId = conversationId
 
@@ -589,11 +611,9 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     public func didReceiveConversationsList(_ list: [ConversationItem]) {
         self.conversations = list
         saveCache()
-        // Если при входе в чат текущий диалог пуст (например новый UUID), а на сервере есть история — сразу синхронизируем последний диалог
+        // Если при входе в чат текущий диалог пуст (например новый UUID), а на сервере есть история — синхронизируем последний диалог
         if !isExplicitNewChat {
             if allMessages.isEmpty && messages.isEmpty, let first = list.first {
-                selectConversation(first)
-            } else if let curr = currentConversationId, !list.contains(where: { $0.id == curr }), let first = list.first {
                 selectConversation(first)
             }
         }

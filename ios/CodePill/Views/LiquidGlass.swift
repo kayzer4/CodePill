@@ -10,6 +10,7 @@ public struct LiquidGlassModifier: ViewModifier {
 
     public func body(content: Content) -> some View {
         content
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .background(
                 ZStack {
                     // Deep dark glass foundation

@@ -137,19 +137,26 @@ public struct CodeBlockCard: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color(UIColor.secondarySystemBackground).opacity(0.85))
+            .background(Color(red: 0.12, green: 0.13, blue: 0.16))
 
             Divider()
+                .overlay(Color.white.opacity(0.08))
 
             // Code Body
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.white.opacity(0.92))
                     .padding(12)
                     .textSelection(.enabled)
             }
+            .background(Color(red: 0.08, green: 0.09, blue: 0.11))
         }
-        .liquidGlass(cornerRadius: 14, specularOpacity: 0.15)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
+        )
+        .padding(.vertical, 4)
     }
 }

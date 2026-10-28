@@ -6,10 +6,10 @@ import UIKit
 public protocol CodePillClientDelegate: AnyObject {
     func clientDidConnect()
     func clientDidDisconnect(error: Error?)
-    func didReceiveTokenChunk(_ chunk: String)
-    func didUpdateIsland(state: CodePillAttributes.ContentState)
-    func didStartTool(callId: String, name: String, summary: String, parametersText: String?)
-    func didEndTool(callId: String, success: Bool, output: String, fullOutput: String?, duration: Double?)
+    func didReceiveTokenChunk(_ chunk: String, conversationId: String?)
+    func didUpdateIsland(state: CodePillAttributes.ContentState, conversationId: String?)
+    func didStartTool(callId: String, name: String, summary: String, parametersText: String?, conversationId: String?)
+    func didEndTool(callId: String, success: Bool, output: String, fullOutput: String?, duration: Double?, conversationId: String?)
     func didFinishTurn(conversationId: String, success: Bool, summary: String?)
     func didSyncHistory(conversationId: String, messages: [ChatMessage], isBusy: Bool, islandState: CodePillAttributes.ContentState?)
     func didCompleteRollback(conversationId: String, messages: [ChatMessage], restoredPrompt: String?)
@@ -412,7 +412,8 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         switch type {
         case "token_chunk":
             if let text = payload["text"] as? String {
-                delegate?.didReceiveTokenChunk(text)
+                let convId = payload["conversation_id"] as? String
+                delegate?.didReceiveTokenChunk(text, conversationId: convId)
             }
 
         case "island_update":
@@ -421,6 +422,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
             let desc = payload["step_description"] as? String ?? ""
             let isBusy = payload["is_busy"] as? Bool ?? false
             let needsApproval = payload["needs_approval"] as? Bool ?? false
+            let convId = payload["conversation_id"] as? String
 
             let state = CodePillAttributes.ContentState(
                 status: status,
@@ -431,12 +433,13 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
             )
 
             updateDynamicIsland(state)
-            delegate?.didUpdateIsland(state: state)
+            delegate?.didUpdateIsland(state: state, conversationId: convId)
 
         case "tool_start":
             let callId = payload["call_id"] as? String ?? UUID().uuidString
             let name = payload["tool_name"] as? String ?? "tool"
             let summary = payload["summary"] as? String ?? ""
+            let convId = payload["conversation_id"] as? String
             var paramsString: String? = nil
             if let params = payload["parameters"] {
                 if let data = try? JSONSerialization.data(withJSONObject: params, options: .prettyPrinted) {
@@ -451,8 +454,8 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
                 needsApproval: false
             )
             updateDynamicIsland(toolState)
-            delegate?.didUpdateIsland(state: toolState)
-            delegate?.didStartTool(callId: callId, name: name, summary: summary, parametersText: paramsString)
+            delegate?.didUpdateIsland(state: toolState, conversationId: convId)
+            delegate?.didStartTool(callId: callId, name: name, summary: summary, parametersText: paramsString, conversationId: convId)
 
         case "tool_end":
             let callId = payload["call_id"] as? String ?? ""
@@ -460,7 +463,8 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
             let output = payload["output_preview"] as? String ?? ""
             let fullOutput = payload["full_output"] as? String ?? output
             let duration = payload["duration_seconds"] as? Double
-            delegate?.didEndTool(callId: callId, success: success, output: output, fullOutput: fullOutput, duration: duration)
+            let convId = payload["conversation_id"] as? String
+            delegate?.didEndTool(callId: callId, success: success, output: output, fullOutput: fullOutput, duration: duration, conversationId: convId)
 
         case "turn_finished":
             let convId = payload["conversation_id"] as? String ?? ""
@@ -569,28 +573,39 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     // MARK: - ActivityKit (Dynamic Island)
 
     @discardableResult
-    public func startDynamicIsland(prompt: String, projectName: String = "CodePill") -> (Bool, String) {
+    public func startDynamicIsland(
+        prompt: String,
+        projectName: String = "CodePill",
+        isBusy: Bool = true,
+        status: String? = nil
+    ) -> (Bool, String) {
         let auth = ActivityAuthorizationInfo()
         print("[CodePill] Live Activities enabled check: \(auth.areActivitiesEnabled)")
 
-        // Clean up any old activities so we don't hit iOS per-app limit
-        for old in Activity<CodePillAttributes>.activities {
-            Task {
-                await old.end(nil, dismissalPolicy: .immediate)
-            }
-        }
-
+        let currentStatus = status ?? (isBusy ? "Running" : "Ready")
         let attributes = CodePillAttributes(
             projectName: projectName,
             promptSummary: String(prompt.prefix(40))
         )
         let initialContent = CodePillAttributes.ContentState(
-            status: "Running",
+            status: currentStatus,
             currentFile: nil,
             stepDescription: prompt,
-            isBusy: true,
+            isBusy: isBusy,
             needsApproval: false
         )
+
+        // If an activity is already active, reuse and update it directly to avoid iOS per-app limit rejections
+        if let existing = Activity<CodePillAttributes>.activities.first {
+            self.currentActivity = existing
+            for extra in Activity<CodePillAttributes>.activities.dropFirst() {
+                Task { await extra.end(nil, dismissalPolicy: .immediate) }
+            }
+            Task {
+                await existing.update(.init(state: initialContent, staleDate: nil))
+            }
+            return (true, "Dynamic Island успешно обновлен!")
+        }
 
         do {
             let activity = try Activity.request(
@@ -629,16 +644,22 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
             currentActivity = Activity<CodePillAttributes>.activities.first
         }
         guard let activity = currentActivity else { return }
+        let autoStart = UserDefaults.standard.object(forKey: "autoStartLiveActivity") as? Bool ?? true
         let finalState = CodePillAttributes.ContentState(
-            status: success ? "Done" : "Failed",
+            status: success ? "Ready" : "Failed",
             currentFile: nil,
             stepDescription: success ? "Turn completed" : "Error during turn",
             isBusy: false,
             needsApproval: false
         )
         Task {
-            await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .default)
-            self.currentActivity = nil
+            if autoStart {
+                // Keep activity alive in green Ready state
+                await activity.update(.init(state: finalState, staleDate: nil))
+            } else {
+                await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .default)
+                self.currentActivity = nil
+            }
         }
     }
 

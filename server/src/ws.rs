@@ -37,6 +37,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
 
     info!("New iOS client connected via WebSocket from {}", addr);
 
+    let active_conv_id = Arc::new(tokio::sync::RwLock::new(None::<String>));
+    let active_conv_id_send = Arc::clone(&active_conv_id);
+
     // Task forwarding server messages to WebSocket client
     let send_task = tokio::spawn(async move {
         let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(10));
@@ -55,8 +58,15 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                         }
                     }
                 }
-                // Broadcast events from background agent turns
-                Ok((_conv_id, msg)) = broadcast_rx.recv() => {
+                // Broadcast events from background agent turns (filtered by active conversation)
+                Ok((conv_id, msg)) = broadcast_rx.recv() => {
+                    let current = active_conv_id_send.read().await;
+                    if let Some(ref current_id) = *current {
+                        if !conv_id.is_empty() && conv_id != *current_id {
+                            // Strictly do not forward events of other conversations!
+                            continue;
+                        }
+                    }
                     if let Ok(json) = serde_json::to_string(&msg) {
                         if ws_sender.send(Message::Text(json.into())).await.is_err() {
                             break;
@@ -67,8 +77,6 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
             }
         }
     });
-
-    let mut active_conv_id: Option<String> = None;
 
     // Handle incoming client messages
     while let Some(Ok(msg)) = ws_receiver.next().await {
@@ -84,7 +92,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                             model,
                         } => {
                             if let Some(ref cid) = conversation_id {
-                                active_conv_id = Some(cid.clone());
+                                *active_conv_id.write().await = Some(cid.clone());
                             }
                             let mgr = Arc::clone(&state.session_mgr);
                             let direct = direct_tx.clone();
@@ -110,7 +118,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                         }
                         ClientMessage::Sync { conversation_id } => {
                             if let Some(ref cid) = conversation_id {
-                                active_conv_id = Some(cid.clone());
+                                *active_conv_id.write().await = Some(cid.clone());
                             }
                             let target_id = if let Some(ref id) = conversation_id {
                                 Some(id.clone())
@@ -148,6 +156,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                             }
                         }
                         ClientMessage::Rollback { conversation_id } => {
+                            *active_conv_id.write().await = Some(conversation_id.clone());
                             if let Some((msgs, prompt)) = state.session_mgr.rollback(&conversation_id).await {
                                 let _ = direct_tx
                                     .send(ServerMessage::RollbackCompleted {
@@ -191,7 +200,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                         }
                         ClientMessage::Cancel => {
                             info!("Cancel requested by client");
-                            if let Some(ref cid) = active_conv_id {
+                            let cid_opt = active_conv_id.read().await.clone();
+                            if let Some(ref cid) = cid_opt {
                                 state.session_mgr.cancel_turn(cid).await;
                             }
                         }

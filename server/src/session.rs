@@ -381,6 +381,7 @@ impl SessionManager {
             step_description: "Turn cancelled by user".to_string(),
             is_busy: false,
             needs_approval: false,
+            conversation_id: Some(conv_id.to_string()),
         };
 
         {
@@ -624,6 +625,7 @@ impl SessionManager {
                 },
                 is_busy: true,
                 needs_approval: false,
+                conversation_id: Some(conv_id.clone()),
             };
 
             {
@@ -743,6 +745,7 @@ impl SessionManager {
                             },
                             is_busy: true,
                             needs_approval: false,
+                            conversation_id: Some(conv_id.clone()),
                         };
                         {
                             let mut convs = self.conversations.write().await;
@@ -775,6 +778,7 @@ impl SessionManager {
                     step_description: format!("Running: {}", truncate(&active_tasks.join(", "), 25)),
                     is_busy: true,
                     needs_approval: false,
+                    conversation_id: Some(conv_id.clone()),
                 };
                 {
                     let mut convs = self.conversations.write().await;
@@ -813,6 +817,7 @@ impl SessionManager {
             step_description: if overall_success { "Finished task" } else { "Error during execution" }.to_string(),
             is_busy: false,
             needs_approval: false,
+            conversation_id: Some(conv_id.clone()),
         };
 
         // Reload full transcript from brain on disk to ensure 100% sync
@@ -895,6 +900,7 @@ impl SessionManager {
                                 conv_id.to_string(),
                                 ServerMessage::TokenChunk {
                                     text: text_delta.to_string(),
+                                    conversation_id: Some(conv_id.to_string()),
                                 },
                             ));
                         }
@@ -968,6 +974,7 @@ impl SessionManager {
                                     step_description: desc.clone(),
                                     is_busy: true,
                                     needs_approval: false,
+                                    conversation_id: Some(conv_id.to_string()),
                                 };
 
                                 {
@@ -1017,6 +1024,7 @@ impl SessionManager {
                                         tool_name: tool_name.to_string(),
                                         summary: desc,
                                         parameters: params,
+                                        conversation_id: Some(conv_id.to_string()),
                                     },
                                 ));
                             } else if state == "DONE" {
@@ -1052,6 +1060,7 @@ impl SessionManager {
                                         output_preview: truncate(&output, 100),
                                         full_output: Some(output),
                                         duration_seconds: duration,
+                                        conversation_id: Some(conv_id.to_string()),
                                     },
                                 ));
                             }
@@ -1063,6 +1072,7 @@ impl SessionManager {
                                 step_description: "Generating solution...".to_string(),
                                 is_busy: true,
                                 needs_approval: false,
+                                conversation_id: Some(conv_id.to_string()),
                             };
 
                             let _ = tx.send((
@@ -1102,6 +1112,7 @@ impl SessionManager {
                                 conv_id.to_string(),
                                 ServerMessage::TokenChunk {
                                     text: response_text.to_string(),
+                                    conversation_id: Some(conv_id.to_string()),
                                 },
                             ));
                         }

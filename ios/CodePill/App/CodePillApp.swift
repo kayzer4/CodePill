@@ -10,6 +10,10 @@ struct CodePillApp: App {
                 .preferredColorScheme(.dark)
                 .onAppear {
                     client.connect()
+                    let autoStart = UserDefaults.standard.object(forKey: "autoStartLiveActivity") as? Bool ?? true
+                    if autoStart {
+                        client.startDynamicIsland(prompt: "CodePill Ready", projectName: "CodePill", isBusy: false)
+                    }
                 }
         }
     }
