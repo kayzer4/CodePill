@@ -493,8 +493,34 @@ public struct ContentView: View {
         .offset(x: currentX)
         .shadow(color: Color.black.opacity(showSideDrawer ? 0.35 : 0), radius: 16, x: 6, y: 0)
 
+        // Native left-edge swipe fallback zone
+        if !showSideDrawer {
+            Color.clear
+                .frame(width: 36)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 10, coordinateSpace: .local)
+                        .onChanged { value in
+                            let x = value.translation.width
+                            let y = value.translation.height
+                            if x > 0 && x > abs(y) * 1.1 {
+                                dragOffset = min(drawerWidth, x)
+                            }
+                        }
+                        .onEnded { value in
+                            let velocity = value.predictedEndTranslation.width
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                                if dragOffset > 45 || velocity > 100 {
+                                    showSideDrawer = true
+                                }
+                                dragOffset = 0
+                            }
+                        }
+                )
+        }
+
         // Window-level directional pan gesture helper:
-        // Works across left ~60% of the screen without conflicting with vertical chat scrolling
+        // Works across left ~85% of the screen without conflicting with vertical chat scrolling
         WindowDrawerPanHelper(
             isOpen: showSideDrawer,
             drawerWidth: drawerWidth,
@@ -507,7 +533,7 @@ public struct ContentView: View {
             },
             onPanEnded: { translationX, velocityX in
                 if showSideDrawer {
-                    let shouldClose = translationX < -50 || velocityX < -150
+                    let shouldClose = translationX < -45 || velocityX < -120
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                         if shouldClose {
                             showSideDrawer = false
@@ -515,7 +541,7 @@ public struct ContentView: View {
                         dragOffset = 0
                     }
                 } else {
-                    let shouldOpen = translationX > 60 || velocityX > 150
+                    let shouldOpen = translationX > 45 || velocityX > 120
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                         if shouldOpen {
                             showSideDrawer = true

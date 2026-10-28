@@ -87,14 +87,23 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
                   let window = self.window else { return false }
 
+            let translation = pan.translation(in: window)
             let velocity = pan.velocity(in: window)
 
             if isOpen {
                 // When drawer is open: swipe left from anywhere on the entire screen to close
-                return velocity.x < -20 && abs(velocity.x) > abs(velocity.y) * 1.15
+                let isMovingLeft = velocity.x < -10 || translation.x < -5
+                let isHorizontal = abs(velocity.x) > abs(velocity.y) * 1.05 || abs(translation.x) > abs(translation.y) * 1.05
+                return isMovingLeft && isHorizontal
             } else {
-                // When drawer is closed: swipe right from anywhere on the entire screen to open
-                return velocity.x > 25 && abs(velocity.x) > abs(velocity.y) * 1.25
+                // When drawer is closed: swipe right from anywhere on screen (left ~85%) to open
+                let location = pan.location(in: window)
+                let screenWidth = window.bounds.width
+                if location.x > screenWidth * 0.85 { return false }
+
+                let isMovingRight = velocity.x > 10 || translation.x > 5
+                let isHorizontal = abs(velocity.x) > abs(velocity.y) * 1.05 || abs(translation.x) > abs(translation.y) * 1.05
+                return isMovingRight && isHorizontal
             }
         }
 
@@ -102,7 +111,25 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            // Strictly one at a time — chat scroll and drawer swipe never run simultaneously!
+            // Allow simultaneous evaluation with other recognizers (e.g. UIScrollView) so both receive touch vectors
+            return true
+        }
+
+        public func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            // When our drawer pan recognizer claims the horizontal gesture, require other pan recognizers (like UIScrollView) to fail
+            if otherGestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer != gestureRecognizer {
+                return true
+            }
+            return false
+        }
+
+        public func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
             return false
         }
 
