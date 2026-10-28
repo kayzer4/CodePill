@@ -619,7 +619,13 @@ impl SessionManager {
                 cmd.arg("--model").arg(model);
             }
 
-            if turn_count > 1 || conversation_id.is_some() {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+            let conv_exists = PathBuf::from(&home)
+                .join(".gemini/antigravity-cli/brain")
+                .join(&conv_id)
+                .exists();
+
+            if turn_count > 1 || conv_exists {
                 cmd.arg("--conversation").arg(&conv_id);
             }
 
