@@ -31,6 +31,7 @@ pub struct SessionManager {
     conversations: Arc<RwLock<HashMap<String, ConversationState>>>,
     broadcast_tx: broadcast::Sender<(String, ServerMessage)>,
     proxy_mgr: Arc<ProxyManager>,
+    active_pids: Arc<RwLock<HashMap<String, u32>>>,
 }
 
 impl SessionManager {
@@ -42,6 +43,7 @@ impl SessionManager {
             conversations: Arc::new(RwLock::new(HashMap::new())),
             broadcast_tx,
             proxy_mgr,
+            active_pids: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -343,7 +345,137 @@ impl SessionManager {
         None
     }
 
-    /// Spawns `agy` in stream-json mode and processes text_deltas in real time
+    pub async fn cancel_turn(&self, conv_id: &str) {
+        let pid_opt = {
+            let mut pids = self.active_pids.write().await;
+            pids.remove(conv_id)
+        };
+
+        if let Some(pid) = pid_opt {
+            info!("Cancelling turn for [{}], killing PID {}", conv_id, pid);
+            let _ = tokio::process::Command::new("kill")
+                .arg("-TERM")
+                .arg(pid.to_string())
+                .output()
+                .await;
+        }
+
+        let cancelled_island = DynamicIslandState {
+            status: "Cancelled".to_string(),
+            current_file: None,
+            step_description: "Turn cancelled by user".to_string(),
+            is_busy: false,
+            needs_approval: false,
+        };
+
+        {
+            let mut convs = self.conversations.write().await;
+            if let Some(c) = convs.get_mut(conv_id) {
+                c.is_busy = false;
+                c.current_island_state = Some(cancelled_island.clone());
+            }
+        }
+
+        let _ = self.broadcast_tx.send((conv_id.to_string(), ServerMessage::IslandUpdate(cancelled_island)));
+        let _ = self.broadcast_tx.send((
+            conv_id.to_string(),
+            ServerMessage::TurnFinished {
+                conversation_id: conv_id.to_string(),
+                success: false,
+                summary: Some("Turn cancelled by user".to_string()),
+            },
+        ));
+    }
+
+    async fn check_undelivered_messages(conv_id: &str) -> usize {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+        let path = format!("{}/.gemini/antigravity-cli/brain/{}/.system_generated/messages/undelivered", home, conv_id);
+        if let Ok(mut entries) = tokio::fs::read_dir(&path).await {
+            let mut count = 0;
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                if entry.file_name().to_string_lossy().ends_with(".json") {
+                    count += 1;
+                }
+            }
+            return count;
+        }
+        0
+    }
+
+    async fn check_pending_schedule_or_tasks(conv_id: &str) -> (Option<u64>, Vec<String>) {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+        let path = format!("{}/.gemini/antigravity-cli/brain/{}/.system_generated/logs/transcript.jsonl", home, conv_id);
+        let Ok(file) = tokio::fs::File::open(&path).await else {
+            return (None, Vec::new());
+        };
+
+        use tokio::io::AsyncBufReadExt;
+        let mut reader = tokio::io::BufReader::new(file).lines();
+        let mut lines = Vec::new();
+        while let Ok(Some(line)) = reader.next_line().await {
+            if !line.trim().is_empty() {
+                lines.push(line);
+            }
+        }
+
+        let start_idx = lines.len().saturating_sub(50);
+        let recent = &lines[start_idx..];
+
+        let mut running_tasks = std::collections::HashSet::new();
+        let mut completed_tasks = std::collections::HashSet::new();
+        let mut schedule_duration: Option<u64> = None;
+
+        for line in recent {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                let step_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                let status = val.get("status").and_then(|v| v.as_str()).unwrap_or("");
+
+                if step_type == "GENERIC" && status == "RUNNING" {
+                    if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                        if let Some(idx) = content.find("task id: ") {
+                            let sub = &content[idx + 9..];
+                            if let Some(end) = sub.find('\n').or_else(|| sub.find(' ')) {
+                                let tid = sub[..end].trim().to_string();
+                                running_tasks.insert(tid);
+                            }
+                        }
+                    }
+                }
+
+                if step_type == "SYSTEM_MESSAGE" {
+                    if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                        for tid in running_tasks.iter() {
+                            if content.contains(tid) && (content.contains("finished with result") || content.contains("was canceled")) {
+                                completed_tasks.insert(tid.clone());
+                            }
+                        }
+                    }
+                }
+
+                if step_type == "PLANNER_RESPONSE" {
+                    if let Some(tools) = val.get("tool_calls").and_then(|v| v.as_array()) {
+                        for t in tools {
+                            let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                            if name == "schedule" {
+                                if let Some(args) = t.get("args") {
+                                    if let Some(secs) = args.get("DurationSeconds").and_then(|d| d.as_u64()) {
+                                        schedule_duration = Some(secs);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let active_tasks: Vec<String> = running_tasks.difference(&completed_tasks).cloned().collect();
+        (schedule_duration, active_tasks)
+    }
+
+    /// Spawns `agy` in stream-json mode and processes text_deltas in real time.
+    /// Crucially keeps running until all background tasks and schedules are fully complete,
+    /// even if the client disconnects!
     pub async fn start_turn(
         &self,
         prompt: &str,
@@ -417,113 +549,233 @@ impl SessionManager {
             });
         }
 
-        let mut cmd = Command::new(&self.agy_binary);
-        cmd.current_dir(cwd)
-            .arg("-p")
-            .arg(&enriched_prompt)
-            .arg("--output-format")
-            .arg("stream-json")
-            .arg("--dangerously-skip-permissions")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        let mut current_turn_prompt = enriched_prompt;
+        let mut turn_count = 0;
+        let max_chained_turns = 15;
+        let mut overall_success = true;
 
-        if let Some(proxy_url) = self.proxy_mgr.get_active_proxy_url().await {
-            info!("Injecting proxy into agy turn: {}", proxy_url);
-            cmd.env("HTTPS_PROXY", &proxy_url)
-                .env("HTTP_PROXY", &proxy_url)
-                .env("ALL_PROXY", &proxy_url);
-        } else {
-            let default_proxy = "socks5://pSWoJn:ngPTAv@196.16.2.168:9674";
-            info!("Using fallback default proxy: {}", default_proxy);
-            cmd.env("HTTPS_PROXY", default_proxy)
-                .env("HTTP_PROXY", default_proxy)
-                .env("ALL_PROXY", default_proxy);
-        }
+        while turn_count < max_chained_turns {
+            turn_count += 1;
 
-        if let Some(model) = model_override {
-            cmd.arg("--model").arg(model);
-        }
+            let mut cmd = Command::new(&self.agy_binary);
+            cmd.current_dir(cwd)
+                .arg("-p")
+                .arg(&current_turn_prompt)
+                .arg("--output-format")
+                .arg("stream-json")
+                .arg("--dangerously-skip-permissions")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
 
-        if conversation_id.is_some() {
-            cmd.arg("--conversation").arg(&conv_id);
-        }
-
-        info!("Starting agy turn for [{}] in {}", conv_id, cwd);
-
-        // Initial Island State
-        let initial_island = DynamicIslandState {
-            status: "Thinking".to_string(),
-            current_file: None,
-            step_description: format!("Prompt: {}", truncate(prompt, 30)),
-            is_busy: true,
-            needs_approval: false,
-        };
-
-        {
-            let mut convs = self.conversations.write().await;
-            if let Some(c) = convs.get_mut(&conv_id) {
-                c.current_island_state = Some(initial_island.clone());
+            if let Some(proxy_url) = self.proxy_mgr.get_active_proxy_url().await {
+                info!("Injecting proxy into agy turn #{}: {}", turn_count, proxy_url);
+                cmd.env("HTTPS_PROXY", &proxy_url)
+                    .env("HTTP_PROXY", &proxy_url)
+                    .env("ALL_PROXY", &proxy_url);
+            } else {
+                let default_proxy = "socks5://pSWoJn:ngPTAv@196.16.2.168:9674";
+                info!("Using fallback default proxy: {}", default_proxy);
+                cmd.env("HTTPS_PROXY", default_proxy)
+                    .env("HTTP_PROXY", default_proxy)
+                    .env("ALL_PROXY", default_proxy);
             }
-        }
 
-        let _ = self.broadcast_tx.send((
-            conv_id.clone(),
-            ServerMessage::IslandUpdate(initial_island),
-        ));
+            if let Some(model) = model_override {
+                cmd.arg("--model").arg(model);
+            }
 
-        let mut child = cmd.spawn().context("Failed to spawn agy command")?;
-        let stdout = child.stdout.take().context("No stdout on child process")?;
-        let stderr = child.stderr.take().context("No stderr on child process")?;
+            if turn_count > 1 || conversation_id.is_some() {
+                cmd.arg("--conversation").arg(&conv_id);
+            }
 
-        let conv_id_clone = conv_id.clone();
-        let broadcast_tx = self.broadcast_tx.clone();
-        let convs_ref = Arc::clone(&self.conversations);
+            info!("Starting agy turn #{} for [{}] in {}", turn_count, conv_id, cwd);
 
-        // Task to read stdout NDJSON lines with text_delta extraction
-        let stdout_task = tokio::spawn(async move {
-            let mut reader = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                if line.trim().is_empty() {
+            // Initial Island State for this sub-turn
+            let sub_island = DynamicIslandState {
+                status: if turn_count == 1 { "Thinking".to_string() } else { "Executing".to_string() },
+                current_file: None,
+                step_description: if turn_count == 1 {
+                    format!("Prompt: {}", truncate(prompt, 30))
+                } else {
+                    "Processing background task results".to_string()
+                },
+                is_busy: true,
+                needs_approval: false,
+            };
+
+            {
+                let mut convs = self.conversations.write().await;
+                if let Some(c) = convs.get_mut(&conv_id) {
+                    c.current_island_state = Some(sub_island.clone());
+                    c.is_busy = true;
+                }
+            }
+
+            let _ = self.broadcast_tx.send((
+                conv_id.clone(),
+                ServerMessage::IslandUpdate(sub_island),
+            ));
+
+            let mut child = cmd.spawn().context("Failed to spawn agy command")?;
+            if let Some(pid) = child.id() {
+                let mut pids = self.active_pids.write().await;
+                pids.insert(conv_id.clone(), pid);
+            }
+
+            let stdout = child.stdout.take().context("No stdout on child process")?;
+            let stderr = child.stderr.take().context("No stderr on child process")?;
+
+            let conv_id_clone = conv_id.clone();
+            let broadcast_tx = self.broadcast_tx.clone();
+            let convs_ref = Arc::clone(&self.conversations);
+
+            let stdout_task = tokio::spawn(async move {
+                let mut reader = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+                        Self::handle_agy_event(&val, &conv_id_clone, &broadcast_tx, &convs_ref).await;
+                    }
+                }
+            });
+
+            let broadcast_err_tx = self.broadcast_tx.clone();
+            let conv_id_err = conv_id.clone();
+            let stderr_task = tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr).lines();
+                let mut last_err = String::new();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    warn!("[agy stderr] {}", line);
+                    if line.contains("error:") || line.contains("AGY_ERROR") {
+                        last_err = line;
+                    }
+                }
+                if !last_err.is_empty() {
+                    let _ = broadcast_err_tx.send((
+                        conv_id_err,
+                        ServerMessage::Error { message: last_err },
+                    ));
+                }
+            });
+
+            let status = child.wait().await?;
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+
+            {
+                let mut pids = self.active_pids.write().await;
+                pids.remove(&conv_id);
+            }
+
+            if !status.success() {
+                overall_success = false;
+                break;
+            }
+
+            // Sync messages from disk after this turn
+            let disk_messages = Self::load_antigravity_transcript(&conv_id).await;
+            {
+                let mut convs = self.conversations.write().await;
+                if let Some(c) = convs.get_mut(&conv_id) {
+                    if !disk_messages.is_empty() {
+                        c.messages = disk_messages;
+                    }
+                }
+            }
+
+            // Check if there are undelivered messages ready right now
+            let undelivered = Self::check_undelivered_messages(&conv_id).await;
+            if undelivered > 0 {
+                info!("Found {} undelivered messages for [{}], continuing turn immediately...", undelivered, conv_id);
+                tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+                current_turn_prompt = "Continue and deliver final answer".to_string();
+                continue;
+            }
+
+            // Check if agent scheduled a timer or has running background tasks
+            let (sched_secs, active_tasks) = Self::check_pending_schedule_or_tasks(&conv_id).await;
+
+            if let Some(secs) = sched_secs {
+                info!("Active schedule detected ({}s) for [{}]. Waiting for timer...", secs, conv_id);
+                let sched_island = DynamicIslandState {
+                    status: "Waiting".to_string(),
+                    current_file: None,
+                    step_description: format!("Schedule timer ({}s)", secs),
+                    is_busy: true,
+                    needs_approval: false,
+                };
+                {
+                    let mut convs = self.conversations.write().await;
+                    if let Some(c) = convs.get_mut(&conv_id) {
+                        c.current_island_state = Some(sched_island.clone());
+                    }
+                }
+                let _ = self.broadcast_tx.send((conv_id.clone(), ServerMessage::IslandUpdate(sched_island)));
+
+                // Wait up to secs + 4 seconds for schedule timer to fire
+                let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(secs + 4);
+                let mut message_arrived = false;
+                while tokio::time::Instant::now() < deadline {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+                    if Self::check_undelivered_messages(&conv_id).await > 0 {
+                        message_arrived = true;
+                        break;
+                    }
+                }
+
+                if message_arrived {
+                    info!("Schedule timer fired for [{}], continuing next turn...", conv_id);
+                    current_turn_prompt = "Schedule timer triggered. Continue task and provide response".to_string();
                     continue;
                 }
+            }
 
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
-                    Self::handle_agy_event(&val, &conv_id_clone, &broadcast_tx, &convs_ref).await;
+            if !active_tasks.is_empty() {
+                info!("Active background tasks {:?} for [{}]. Waiting for completion...", active_tasks, conv_id);
+                let task_island = DynamicIslandState {
+                    status: "Task running".to_string(),
+                    current_file: None,
+                    step_description: format!("Running: {}", truncate(&active_tasks.join(", "), 25)),
+                    is_busy: true,
+                    needs_approval: false,
+                };
+                {
+                    let mut convs = self.conversations.write().await;
+                    if let Some(c) = convs.get_mut(&conv_id) {
+                        c.current_island_state = Some(task_island.clone());
+                    }
+                }
+                let _ = self.broadcast_tx.send((conv_id.clone(), ServerMessage::IslandUpdate(task_island)));
+
+                // Wait for background tasks to complete (up to 300 seconds, checking every 1s)
+                let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(300);
+                let mut task_finished = false;
+                while tokio::time::Instant::now() < deadline {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                    if Self::check_undelivered_messages(&conv_id).await > 0 {
+                        task_finished = true;
+                        break;
+                    }
+                }
+
+                if task_finished {
+                    info!("Background task finished for [{}], continuing next turn...", conv_id);
+                    current_turn_prompt = "Background task completed. Continue and report result".to_string();
+                    continue;
                 }
             }
-        });
 
-        // Task to capture stderr
-        let broadcast_err_tx = self.broadcast_tx.clone();
-        let conv_id_err = conv_id.clone();
-        let stderr_task = tokio::spawn(async move {
-            let mut reader = BufReader::new(stderr).lines();
-            let mut last_err = String::new();
-            while let Ok(Some(line)) = reader.next_line().await {
-                warn!("[agy stderr] {}", line);
-                if line.contains("error:") || line.contains("AGY_ERROR") {
-                    last_err = line;
-                }
-            }
-            if !last_err.is_empty() {
-                let _ = broadcast_err_tx.send((
-                    conv_id_err,
-                    ServerMessage::Error { message: last_err },
-                ));
-            }
-        });
-
-        let status = child.wait().await?;
-        let _ = stdout_task.await;
-        let _ = stderr_task.await;
-
-        let success = status.success();
+            // All tasks and schedules completed!
+            break;
+        }
 
         // Finalize conversation state
         let final_island = DynamicIslandState {
-            status: if success { "Done".to_string() } else { "Failed".to_string() },
+            status: if overall_success { "Done".to_string() } else { "Failed".to_string() },
             current_file: None,
-            step_description: if success { "Finished task" } else { "Error during execution" }.to_string(),
+            step_description: if overall_success { "Finished task" } else { "Error during execution" }.to_string(),
             is_busy: false,
             needs_approval: false,
         };
@@ -551,8 +803,8 @@ impl SessionManager {
             conv_id.clone(),
             ServerMessage::TurnFinished {
                 conversation_id: conv_id.clone(),
-                success,
-                summary: Some(if success { "Turn completed successfully" } else { "Turn ended with error" }.to_string()),
+                success: overall_success,
+                summary: Some(if overall_success { "Turn completed successfully" } else { "Turn ended with error" }.to_string()),
             },
         ));
 

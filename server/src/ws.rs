@@ -68,6 +68,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
         }
     });
 
+    let mut active_conv_id: Option<String> = None;
+
     // Handle incoming client messages
     while let Some(Ok(msg)) = ws_receiver.next().await {
         match msg {
@@ -81,6 +83,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                             conversation_id,
                             model,
                         } => {
+                            if let Some(ref cid) = conversation_id {
+                                active_conv_id = Some(cid.clone());
+                            }
                             let mgr = Arc::clone(&state.session_mgr);
                             let direct = direct_tx.clone();
                             tokio::spawn(async move {
@@ -104,6 +109,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                             });
                         }
                         ClientMessage::Sync { conversation_id } => {
+                            if let Some(ref cid) = conversation_id {
+                                active_conv_id = Some(cid.clone());
+                            }
                             let target_id = if let Some(ref id) = conversation_id {
                                 Some(id.clone())
                             } else {
@@ -183,6 +191,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                         }
                         ClientMessage::Cancel => {
                             info!("Cancel requested by client");
+                            if let Some(ref cid) = active_conv_id {
+                                state.session_mgr.cancel_turn(cid).await;
+                            }
                         }
                         ClientMessage::RegisterLiveActivity {
                             activity_id,
