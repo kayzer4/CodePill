@@ -6,8 +6,8 @@ public struct ChatInputActionButton: View {
     public let onSend: () -> Void
     public let onCancel: () -> Void
 
-    @State private var pulseGlow: Bool = false
-    @State private var ringRotation: Double = 0
+    @State private var phase: Double = 0
+    @State private var ambientGlow: Bool = false
 
     public init(
         isExecuting: Bool,
@@ -33,78 +33,74 @@ public struct ChatInputActionButton: View {
         } label: {
             ZStack {
                 if isExecuting {
-                    // Claude & ChatGPT style pulsating glow halo
+                    // Строгое элегантное свечение (Soft minimal monochromatic aura)
                     Circle()
                         .fill(
                             RadialGradient(
                                 colors: [
-                                    Color.accentColor.opacity(0.65),
-                                    Color.purple.opacity(0.35),
+                                    Color.accentColor.opacity(0.35),
+                                    Color.accentColor.opacity(0.08),
                                     Color.clear
                                 ],
                                 center: .center,
-                                startRadius: 8,
-                                endRadius: pulseGlow ? 26 : 18
+                                startRadius: 10,
+                                endRadius: ambientGlow ? 22 : 16
                             )
                         )
                         .frame(width: 44, height: 44)
-                        .scaleEffect(pulseGlow ? 1.15 : 0.95)
                         .animation(
-                            .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
-                            value: pulseGlow
+                            .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
+                            value: ambientGlow
                         )
 
-                    // Outer rotating iridescent gradient ring
+                    // 4 аккуратные орбитальные точки в стиле Claude / минимализм
+                    ForEach(0..<4) { index in
+                        let angle = Double(index) * 90.0 + phase
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.85))
+                            .frame(width: 3.2, height: 3.2)
+                            .shadow(color: Color.accentColor.opacity(0.8), radius: 3, x: 0, y: 0)
+                            .offset(
+                                x: 15 * cos(angle * .pi / 180),
+                                y: 15 * sin(angle * .pi / 180)
+                            )
+                    }
+
+                    // Тонкая полупрозрачная окружность
                     Circle()
-                        .strokeBorder(
-                            AngularGradient(
-                                gradient: Gradient(colors: [
-                                    Color.accentColor,
-                                    Color(red: 0.7, green: 0.3, blue: 1.0),
-                                    Color.cyan,
-                                    Color.accentColor.opacity(0.2),
-                                    Color.accentColor
-                                ]),
-                                center: .center
-                            ),
-                            lineWidth: 2.2
-                        )
-                        .frame(width: 32, height: 32)
-                        .rotationEffect(.degrees(ringRotation))
-                        .animation(
-                            .linear(duration: 1.8).repeatForever(autoreverses: false),
-                            value: ringRotation
-                        )
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1.2)
+                        .frame(width: 30, height: 30)
 
-                    // Inner stop disc with glass blur and square
+                    // Стеклянная подложка кнопки «Стоп»
                     Circle()
-                        .fill(Color(UIColor.systemBackground).opacity(0.85))
-                        .frame(width: 28, height: 28)
+                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.85))
+                        .frame(width: 24, height: 24)
 
-                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                    // Строгий квадрат «Стоп»
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.primary)
-                        .frame(width: 10, height: 10)
-                        .shadow(color: Color.black.opacity(0.25), radius: 2, x: 0, y: 1)
+                        .frame(width: 9, height: 9)
+                        .shadow(color: Color.black.opacity(0.2), radius: 1.5, x: 0, y: 0.5)
                 } else {
-                    // Standard Send Arrow with soft dynamic accent glow when active
+                    // Standard Send Arrow with elegant accent glow
                     Circle()
                         .fill(
                             canSend
                                 ? LinearGradient(
-                                    colors: [Color.accentColor, Color.accentColor.opacity(0.85)],
+                                    colors: [Color.accentColor, Color.accentColor.opacity(0.88)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                                 : LinearGradient(
-                                    colors: [Color.secondary.opacity(0.28), Color.secondary.opacity(0.2)],
+                                    colors: [Color.secondary.opacity(0.25), Color.secondary.opacity(0.18)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                         )
                         .frame(width: 32, height: 32)
                         .shadow(
-                            color: canSend ? Color.accentColor.opacity(0.45) : Color.clear,
-                            radius: 6,
+                            color: canSend ? Color.accentColor.opacity(0.4) : Color.clear,
+                            radius: 5,
                             x: 0,
                             y: 2
                         )
@@ -121,18 +117,22 @@ public struct ChatInputActionButton: View {
         .disabled(!isExecuting && !canSend)
         .onAppear {
             if isExecuting {
-                pulseGlow = true
-                ringRotation = 360
+                startAnimations()
             }
         }
         .onChange(of: isExecuting) { executing in
             if executing {
-                pulseGlow = true
-                ringRotation = 360
+                startAnimations()
             } else {
-                pulseGlow = false
-                ringRotation = 0
+                ambientGlow = false
             }
+        }
+    }
+
+    private func startAnimations() {
+        ambientGlow = true
+        withAnimation(.linear(duration: 2.2).repeatForever(autoreverses: false)) {
+            phase = 360
         }
     }
 }
