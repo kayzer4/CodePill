@@ -373,9 +373,11 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         }
 
         // Safety timeout to clear isSyncing if server fails to reply
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) { [weak self] in
             if self?.isSyncing == true {
-                self?.isSyncing = false
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self?.isSyncing = false
+                }
             }
         }
     }
@@ -500,7 +502,6 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         isBusy: Bool,
         islandState: CodePillAttributes.ContentState?
     ) {
-        self.isSyncing = false
         self.currentConversationId = conversationId
         self.client.activeConversationId = conversationId
 
@@ -531,6 +532,13 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
         self.currentIslandState = islandState
         saveCache()
+
+        // Turn off isSyncing only after messages have been applied to state
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                self?.isSyncing = false
+            }
+        }
     }
 
     public func didCompleteRollback(

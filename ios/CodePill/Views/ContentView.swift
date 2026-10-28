@@ -37,32 +37,15 @@ public struct ContentView: View {
                 NavigationStack {
                 VStack(spacing: 0) {
                 // Dynamic Island mirror preview when busy
-                if let island = viewModel.currentIslandState {
+                if let island = viewModel.currentIslandState, island.isBusy {
                     LiveIslandPreview(state: island)
                         .padding(.horizontal, 14)
                         .padding(.top, 4)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-
-                if viewModel.isSyncing {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .tint(.cyan)
-                        Text("Синхронизация истории...")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(Color.cyan.opacity(0.35), lineWidth: 0.8)
-                    )
-                    .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
-                    .padding(.top, 4)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .padding(.bottom, 2)
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.96, anchor: .top).combined(with: .opacity).combined(with: .move(edge: .top)),
+                            removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity).combined(with: .move(edge: .top))
+                        ))
                 }
 
                 // Chat stream with smart auto-scroll & floating bottom button
@@ -238,6 +221,34 @@ public struct ContentView: View {
                             .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
                     }
+                    .overlay(alignment: .top) {
+                        if viewModel.isSyncing {
+                            HStack(spacing: 7) {
+                                ProgressView()
+                                    .scaleEffect(0.65)
+                                    .tint(.cyan)
+                                Text("Синхронизация...")
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(.cyan)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule()
+                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.92))
+                            )
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(Color.cyan.opacity(0.35), lineWidth: 0.8)
+                            )
+                            .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+                            .padding(.top, 6)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .top).combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                        }
+                    }
                 }
 
                 // Attachment preview strip above input
@@ -291,6 +302,7 @@ public struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
+                        hideKeyboard()
                         viewModel.client.requestConversationsList()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                             showSideDrawer.toggle()
@@ -427,6 +439,11 @@ public struct ContentView: View {
                 print("[CodePill] File picker error: \(err)")
             }
         }
+        .onChange(of: showSideDrawer) { isOpen in
+            if isOpen {
+                hideKeyboard()
+            }
+        }
         .onChange(of: scenePhase) { newPhase in
             switch newPhase {
             case .background:
@@ -485,6 +502,7 @@ public struct ContentView: View {
             isOpen: showSideDrawer,
             drawerWidth: drawerWidth,
             onPanChanged: { translationX in
+                hideKeyboard()
                 if showSideDrawer {
                     dragOffset = min(0, max(-drawerWidth, translationX))
                 } else {
