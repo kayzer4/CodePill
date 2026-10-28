@@ -69,6 +69,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         if self.currentConversationId == nil {
             self.currentConversationId = UUID().uuidString
         }
+        self.client.activeConversationId = self.currentConversationId
     }
 
     public func startNewChat() {
@@ -112,6 +113,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
         if let savedConvId = UserDefaults.standard.string(forKey: "codepill_active_conv_id") {
             self.currentConversationId = savedConvId
+            self.client.activeConversationId = savedConvId
             let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(savedConvId).json")
             if let data = try? Data(contentsOf: messagesFile),
                let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
@@ -206,7 +208,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
            let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
             applyMessages(list)
         }
-        client.sendSync(conversationId: item.id)
+        syncCurrentConversation()
         Haptics.shared.selection()
     }
 
@@ -352,10 +354,17 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func handleAppForeground() {
         print("[CodePill] handleAppForeground: ensuring connection and syncing...")
-        client.ensureConnectedAndSync()
-        if let convId = currentConversationId {
-            client.activeConversationId = convId
+        syncCurrentConversation()
+    }
+
+    public func syncCurrentConversation() {
+        guard let convId = currentConversationId else { return }
+        client.activeConversationId = convId
+        if client.isConnected {
             client.sendSync(conversationId: convId)
+            client.requestConversationsList()
+        } else {
+            client.ensureConnectedAndSync()
         }
     }
 
@@ -370,6 +379,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     public func clientDidConnect() {
         self.isConnected = true
         Haptics.shared.notify(.success)
+        syncCurrentConversation()
     }
 
     public func clientDidDisconnect(error: Error?) {
@@ -511,6 +521,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     public func didReceiveConversationsList(_ list: [ConversationItem]) {
         self.conversations = list
         saveCache()
+        // Если при входе в чат текущий диалог пуст (например новый UUID), а на сервере есть история — сразу синхронизируем последний диалог
+        if allMessages.isEmpty && messages.isEmpty, let first = list.first {
+            selectConversation(first)
+        }
     }
 
     public func didReceiveError(_ message: String) {

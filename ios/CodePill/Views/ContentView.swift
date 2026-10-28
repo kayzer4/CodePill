@@ -417,6 +417,9 @@ public struct ContentView: View {
                 break
             }
         }
+        .onAppear {
+            viewModel.syncCurrentConversation()
+        }
 
         // Darkened Backdrop for Drawer
         if showSideDrawer || dragOffset > 0 {

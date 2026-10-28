@@ -104,7 +104,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                             });
                         }
                         ClientMessage::Sync { conversation_id } => {
-                            if let Some(id) = conversation_id {
+                            let target_id = if let Some(ref id) = conversation_id {
+                                Some(id.clone())
+                            } else {
+                                let list = state.session_mgr.list_conversations().await;
+                                list.first().map(|c| c.id.clone())
+                            };
+
+                            if let Some(id) = target_id {
                                 if let Some(conv) = state.session_mgr.get_conversation(&id).await {
                                     let _ = direct_tx
                                         .send(ServerMessage::HistorySync {

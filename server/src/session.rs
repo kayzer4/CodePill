@@ -295,23 +295,21 @@ impl SessionManager {
     }
 
     pub async fn get_conversation(&self, id: &str) -> Option<ConversationState> {
-        {
-            let convs = self.conversations.read().await;
-            if let Some(c) = convs.get(id) {
-                if !c.messages.is_empty() {
-                    return Some(c.clone());
-                }
+        let msgs = Self::load_antigravity_transcript(id).await;
+
+        let mut convs = self.conversations.write().await;
+        if let Some(c) = convs.get_mut(id) {
+            if !msgs.is_empty() && (!c.is_busy || c.messages.is_empty()) {
+                c.messages = msgs;
             }
+            return Some(c.clone());
         }
 
-        // Dynamically load transcript from Antigravity CLI brain if not cached in memory
-        let msgs = Self::load_antigravity_transcript(id).await;
         if !msgs.is_empty() {
-            let mut convs = self.conversations.write().await;
             let conv = convs.entry(id.to_string()).or_insert_with(|| ConversationState {
                 id: id.to_string(),
                 title: msgs.first().map(|m| truncate(&m.text, 30)).unwrap_or_else(|| "Session".to_string()),
-                messages: Vec::new(),
+                messages: msgs.clone(),
                 updated_at: chrono_or_simple_time(),
                 is_busy: false,
                 current_island_state: None,
@@ -320,7 +318,6 @@ impl SessionManager {
             return Some(conv.clone());
         }
 
-        let convs = self.conversations.read().await;
         convs.get(id).cloned()
     }
 
