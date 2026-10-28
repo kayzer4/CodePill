@@ -70,7 +70,7 @@ public struct SideConversationsDrawer: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 56) // Clean padding under Dynamic Island / notch and status bar
+                .padding(.top, 10) // Right below the status bar indicator icons
 
                 // Search field
                 HStack(spacing: 8) {

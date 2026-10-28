@@ -6,7 +6,8 @@ public struct ChatInputActionButton: View {
     public let onSend: () -> Void
     public let onCancel: () -> Void
 
-    @State private var isSpinning: Bool = false
+    @State private var pulseGlow: Bool = false
+    @State private var ringRotation: Double = 0
 
     public init(
         isExecuting: Bool,
@@ -32,51 +33,105 @@ public struct ChatInputActionButton: View {
         } label: {
             ZStack {
                 if isExecuting {
-                    // ChatGPT / Claude style stop button with animated loader ring
+                    // Claude & ChatGPT style pulsating glow halo
                     Circle()
-                        .stroke(Color.secondary.opacity(0.2), lineWidth: 2.5)
-                        .frame(width: 32, height: 32)
-
-                    Circle()
-                        .trim(from: 0.0, to: 0.65)
-                        .stroke(
-                            Color.accentColor,
-                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    Color.accentColor.opacity(0.65),
+                                    Color.purple.opacity(0.35),
+                                    Color.clear
+                                ],
+                                center: .center,
+                                startRadius: 8,
+                                endRadius: pulseGlow ? 26 : 18
+                            )
                         )
-                        .frame(width: 32, height: 32)
-                        .rotationEffect(.degrees(isSpinning ? 360 : 0))
+                        .frame(width: 44, height: 44)
+                        .scaleEffect(pulseGlow ? 1.15 : 0.95)
                         .animation(
-                            .linear(duration: 0.9).repeatForever(autoreverses: false),
-                            value: isSpinning
+                            .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                            value: pulseGlow
                         )
 
-                    // Rounded stop square
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.primary)
-                        .frame(width: 11, height: 11)
-                } else {
-                    // Standard Send Arrow
+                    // Outer rotating iridescent gradient ring
                     Circle()
-                        .fill(canSend ? Color.accentColor : Color.secondary.opacity(0.3))
+                        .strokeBorder(
+                            AngularGradient(
+                                gradient: Gradient(colors: [
+                                    Color.accentColor,
+                                    Color(red: 0.7, green: 0.3, blue: 1.0),
+                                    Color.cyan,
+                                    Color.accentColor.opacity(0.2),
+                                    Color.accentColor
+                                ]),
+                                center: .center
+                            ),
+                            lineWidth: 2.2
+                        )
                         .frame(width: 32, height: 32)
+                        .rotationEffect(.degrees(ringRotation))
+                        .animation(
+                            .linear(duration: 1.8).repeatForever(autoreverses: false),
+                            value: ringRotation
+                        )
+
+                    // Inner stop disc with glass blur and square
+                    Circle()
+                        .fill(Color(UIColor.systemBackground).opacity(0.85))
+                        .frame(width: 28, height: 28)
+
+                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                        .fill(Color.primary)
+                        .frame(width: 10, height: 10)
+                        .shadow(color: Color.black.opacity(0.25), radius: 2, x: 0, y: 1)
+                } else {
+                    // Standard Send Arrow with soft dynamic accent glow when active
+                    Circle()
+                        .fill(
+                            canSend
+                                ? LinearGradient(
+                                    colors: [Color.accentColor, Color.accentColor.opacity(0.85)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                                : LinearGradient(
+                                    colors: [Color.secondary.opacity(0.28), Color.secondary.opacity(0.2)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                        )
+                        .frame(width: 32, height: 32)
+                        .shadow(
+                            color: canSend ? Color.accentColor.opacity(0.45) : Color.clear,
+                            radius: 6,
+                            x: 0,
+                            y: 2
+                        )
 
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(canSend ? Color.white : Color.white.opacity(0.5))
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(canSend ? Color.white : Color.white.opacity(0.45))
                 }
             }
+            .frame(width: 38, height: 38)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .disabled(!isExecuting && !canSend)
         .onAppear {
             if isExecuting {
-                isSpinning = true
+                pulseGlow = true
+                ringRotation = 360
             }
         }
         .onChange(of: isExecuting) { executing in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isSpinning = executing
+            if executing {
+                pulseGlow = true
+                ringRotation = 360
+            } else {
+                pulseGlow = false
+                ringRotation = 0
             }
         }
     }

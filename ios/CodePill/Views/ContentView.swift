@@ -254,18 +254,6 @@ public struct ContentView: View {
             }
             .background(LiquidAmbientBackground())
             .navigationBarTitleDisplayMode(.inline)
-            .overlay(
-                ZStack {
-                    if viewModel.isExecuting {
-                        Color.black.opacity(0.18)
-                            .ignoresSafeArea()
-                            .allowsHitTesting(false)
-                        ProgressView()
-                            .scaleEffect(1.4)
-                            .allowsHitTesting(false)
-                    }
-                }
-            )
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -432,41 +420,53 @@ public struct ContentView: View {
         .frame(width: drawerWidth)
         .offset(x: currentX)
         .shadow(color: Color.black.opacity(showSideDrawer ? 0.35 : 0), radius: 16, x: 6, y: 0)
+
+        // Left edge swipe detector strip (allows opening drawer over ScrollView and Text)
+        if !showSideDrawer {
+            Color.clear
+                .frame(width: 30)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 10, coordinateSpace: .global)
+                        .onChanged { value in
+                            let translation = value.translation.width
+                            if translation > 0 {
+                                dragOffset = min(drawerWidth, translation)
+                            }
+                        }
+                        .onEnded { value in
+                            let velocity = value.predictedEndTranslation.width
+                            if dragOffset > 60 || velocity > 150 {
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                                    showSideDrawer = true
+                                }
+                            }
+                            dragOffset = 0
+                        }
+                )
+        }
     }
-    // Edge drag gesture to open / close drawer
-    .gesture(
+    // Drag gesture on open drawer or backdrop to close
+    .simultaneousGesture(
         DragGesture()
             .onChanged { value in
-                let startX = value.startLocation.x
-                let translation = value.translation.width
-
-                if !showSideDrawer {
-                    if startX < 45 && translation > 0 {
-                        dragOffset = min(drawerWidth, translation)
-                    }
-                } else {
+                if showSideDrawer {
+                    let translation = value.translation.width
                     if translation < 0 {
                         dragOffset = max(-drawerWidth, translation)
                     }
                 }
             }
             .onEnded { value in
-                let velocity = value.predictedEndTranslation.width
-
-                if !showSideDrawer {
-                    if dragOffset > 75 || velocity > 200 {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                            showSideDrawer = true
-                        }
-                    }
-                } else {
-                    if dragOffset < -75 || velocity < -200 {
+                if showSideDrawer {
+                    let velocity = value.predictedEndTranslation.width
+                    if dragOffset < -60 || velocity < -150 {
                         withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                             showSideDrawer = false
                         }
                     }
+                    dragOffset = 0
                 }
-                dragOffset = 0
             }
     )
 }
