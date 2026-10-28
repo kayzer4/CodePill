@@ -11,6 +11,7 @@ public struct ContentView: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showPhotoPicker: Bool = false
     @State private var showFilePicker: Bool = false
+    @State private var selectedToolDetail: ToolCallItem? = nil
     @State private var isAtBottom: Bool = true
     @State private var userScrolledUp: Bool = false
     @State private var hasInitialScrolled: Bool = false
@@ -22,13 +23,22 @@ public struct ContentView: View {
         _viewModel = StateObject(wrappedValue: ChatViewModel(client: client))
     }
 
-    private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = false) {
+    private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
+        let targetId = "chatBottomAnchor"
         if animated {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                proxy.scrollTo(targetId, anchor: .bottom)
+                if let lastId = viewModel.messages.last?.id {
+                    proxy.scrollTo(lastId, anchor: .bottom)
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                    proxy.scrollTo(targetId, anchor: .bottom)
+                }
             }
         } else {
-            proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+            proxy.scrollTo(targetId, anchor: .bottom)
         }
     }
 
@@ -40,6 +50,25 @@ public struct ContentView: View {
                 // Dynamic Island mirror preview when busy
                 if let island = viewModel.currentIslandState, island.isBusy {
                     LiveIslandPreview(state: island)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if let tool = viewModel.latestToolCall {
+                                selectedToolDetail = tool
+                            } else {
+                                selectedToolDetail = ToolCallItem(
+                                    id: UUID().uuidString,
+                                    name: island.status,
+                                    summary: island.stepDescription,
+                                    output: island.currentFile,
+                                    fullOutput: island.currentFile,
+                                    parametersText: island.currentFile.map { "File: \($0)" },
+                                    isRunning: island.isBusy,
+                                    isSuccess: !island.isBusy,
+                                    duration: nil
+                                )
+                            }
+                            Haptics.shared.selection()
+                        }
                         .padding(.horizontal, 14)
                         .padding(.top, 4)
                         .padding(.bottom, 2)
@@ -179,9 +208,7 @@ public struct ContentView: View {
                             Button {
                                 userScrolledUp = false
                                 isAtBottom = true
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                    proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
-                                }
+                                scrollToBottom(proxy: proxy, animated: true)
                                 Haptics.shared.impact(.light)
                             } label: {
                                 ZStack {
@@ -382,6 +409,9 @@ public struct ContentView: View {
                     }
                 }
             }
+        }
+        .sheet(item: $selectedToolDetail) { tool in
+            ToolDetailSheet(item: tool)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(

@@ -150,6 +150,15 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         Haptics.shared.impact(.light)
     }
 
+    public var latestToolCall: ToolCallItem? {
+        for msg in messages.reversed() {
+            if let last = msg.toolCalls.last {
+                return last
+            }
+        }
+        return nil
+    }
+
     public func removeAttachment(id: String) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             attachments.removeAll(where: { $0.id == id })

@@ -87,22 +87,40 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
                   let window = self.window else { return false }
 
+            let location = pan.location(in: window)
+
+            // 1. NEVER intercept touches in bottom input bar area (bottom 115pt of screen)
+            if location.y > window.bounds.height - 115 {
+                return false
+            }
+
+            // 2. NEVER intercept touches if user is interacting with text inputs or text selection
+            if let hitView = window.hitTest(location, with: nil) {
+                if hitView is UITextField || hitView is UITextView ||
+                   hitView.superview is UITextField || hitView.superview is UITextView {
+                    return false
+                }
+                let className = NSStringFromClass(type(of: hitView))
+                if className.contains("Text") || className.contains("Selection") || className.contains("Range") || className.contains("Loupe") {
+                    return false
+                }
+            }
+
             let translation = pan.translation(in: window)
             let velocity = pan.velocity(in: window)
 
             if isOpen {
                 // When drawer is open: swipe left from anywhere on the entire screen to close
                 let isMovingLeft = velocity.x < -10 || translation.x < -5
-                let isHorizontal = abs(velocity.x) > abs(velocity.y) * 1.05 || abs(translation.x) > abs(translation.y) * 1.05
+                let isHorizontal = abs(velocity.x) > abs(velocity.y) * 1.15 || abs(translation.x) > abs(translation.y) * 1.15
                 return isMovingLeft && isHorizontal
             } else {
                 // When drawer is closed: swipe right from anywhere on screen (left ~85%) to open
-                let location = pan.location(in: window)
                 let screenWidth = window.bounds.width
                 if location.x > screenWidth * 0.85 { return false }
 
-                let isMovingRight = velocity.x > 10 || translation.x > 5
-                let isHorizontal = abs(velocity.x) > abs(velocity.y) * 1.05 || abs(translation.x) > abs(translation.y) * 1.05
+                let isMovingRight = velocity.x > 15 || translation.x > 10
+                let isHorizontal = abs(velocity.x) > abs(velocity.y) * 1.25 || abs(translation.x) > abs(translation.y) * 1.25
                 return isMovingRight && isHorizontal
             }
         }
@@ -119,9 +137,11 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            // When our drawer pan recognizer claims the horizontal gesture, require other pan recognizers (like UIScrollView) to fail
+            // ONLY require UIScrollView pan recognizers to fail, NEVER text selection or text input gestures!
             if otherGestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer != gestureRecognizer {
-                return true
+                if otherGestureRecognizer.view is UIScrollView {
+                    return true
+                }
             }
             return false
         }
@@ -140,8 +160,13 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
 
             switch recognizer.state {
             case .began:
-                window.endEditing(true)
+                if abs(translation.x) > 25 {
+                    window.endEditing(true)
+                }
             case .changed:
+                if abs(translation.x) > 25 {
+                    window.endEditing(true)
+                }
                 onPanChanged?(translation.x)
             case .ended, .cancelled:
                 onPanEnded?(translation.x, velocity.x)

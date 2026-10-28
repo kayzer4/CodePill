@@ -124,6 +124,9 @@ public struct LiveIslandPreview: View {
     }
 
     private var statusBadgeText: String {
+        if !state.isBusy {
+            return "READY"
+        }
         if state.needsApproval {
             return "CONFIRM"
         }
@@ -131,13 +134,13 @@ public struct LiveIslandPreview: View {
         if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
             return "TIMER"
         }
-        if state.isBusy {
-            return "ACTIVE"
-        }
         return state.status.uppercased()
     }
 
     private var toolThemeColor: Color {
+        if !state.isBusy {
+            return Color.green
+        }
         let lower = (state.status + " " + state.stepDescription).lowercased()
         if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
             return Color.purple
@@ -161,6 +164,9 @@ public struct LiveIslandPreview: View {
     }
 
     private var iconName: String {
+        if !state.isBusy {
+            return "checkmark.circle.fill"
+        }
         let lower = (state.status + " " + state.stepDescription).lowercased()
         if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
             return "clock.badge.checkmark"

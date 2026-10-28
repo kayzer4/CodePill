@@ -10,9 +10,9 @@ public struct CodePillWidgetLiveActivity: Widget {
             // Lock Screen Banner / Notification view
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Image(systemName: toolIcon(status: context.state.status, desc: context.state.stepDescription))
+                    Image(systemName: !context.state.isBusy ? "checkmark.circle.fill" : toolIcon(status: context.state.status, desc: context.state.stepDescription))
                         .font(.headline)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(!context.state.isBusy ? Color.green : Color.accentColor)
 
                     Text(context.attributes.projectName)
                         .font(.headline.bold())
@@ -50,14 +50,14 @@ public struct CodePillWidgetLiveActivity: Widget {
                 // Expanded UI (When holding or long-pressing the Dynamic Island)
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 6) {
-                        Image(systemName: toolIcon(status: context.state.status, desc: context.state.stepDescription))
-                            .foregroundStyle(Color.accentColor)
-                        Text(toolHeading(status: context.state.status, desc: context.state.stepDescription))
+                        Image(systemName: !context.state.isBusy ? "checkmark.circle.fill" : toolIcon(status: context.state.status, desc: context.state.stepDescription))
+                            .foregroundStyle(!context.state.isBusy ? Color.green : Color.accentColor)
+                        Text(!context.state.isBusy ? "Ready" : toolHeading(status: context.state.status, desc: context.state.stepDescription))
                             .font(.subheadline.bold())
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    StatusBadge(status: context.state.isBusy ? "Active" : context.state.status, isBusy: context.state.isBusy)
+                    StatusBadge(status: !context.state.isBusy ? "Ready" : (context.state.status.lowercased().contains("wait") ? "Waiting" : "Active"), isBusy: context.state.isBusy)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -95,13 +95,17 @@ public struct CodePillWidgetLiveActivity: Widget {
                     .padding(.top, 2)
                 }
             } compactLeading: {
-                // Dynamic Island compact left (shows active tool icon + spinner)
+                // Dynamic Island compact left (shows active tool icon + spinner or green checkmark)
                 HStack(spacing: 4) {
-                    Image(systemName: toolIcon(status: context.state.status, desc: context.state.stepDescription))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                    if !context.state.isBusy {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.green)
+                    } else {
+                        Image(systemName: toolIcon(status: context.state.status, desc: context.state.stepDescription))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(context.state.status.lowercased().contains("wait") ? Color.purple : Color.accentColor)
 
-                    if context.state.isBusy {
                         ProgressView()
                             .progressViewStyle(.circular)
                             .scaleEffect(0.55)
@@ -111,12 +115,12 @@ public struct CodePillWidgetLiveActivity: Widget {
                 // Dynamic Island compact right (shows file/tool short label)
                 Text(compactTrailingLabel(context.state))
                     .font(.caption2.bold().monospaced())
-                    .foregroundStyle(context.state.isBusy ? .orange : .green)
+                    .foregroundStyle(context.state.isBusy ? (context.state.status.lowercased().contains("wait") ? .purple : .orange) : .green)
                     .lineLimit(1)
             } minimal: {
                 // Minimal single icon
-                Image(systemName: toolIcon(status: context.state.status, desc: context.state.stepDescription))
-                    .foregroundStyle(Color.accentColor)
+                Image(systemName: !context.state.isBusy ? "checkmark.circle.fill" : toolIcon(status: context.state.status, desc: context.state.stepDescription))
+                    .foregroundStyle(!context.state.isBusy ? Color.green : Color.accentColor)
             }
         }
     }
@@ -204,10 +208,11 @@ struct StatusBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(isBusy ? Color.orange : Color.green)
+                .fill(!isBusy ? Color.green : (status.lowercased().contains("wait") ? Color.purple : Color.orange))
                 .frame(width: 7, height: 7)
-            Text(status)
+            Text(!isBusy ? "Ready" : status)
                 .font(.caption2.bold().monospaced())
+                .foregroundStyle(!isBusy ? Color.green : Color.primary)
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
