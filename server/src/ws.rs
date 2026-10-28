@@ -113,10 +113,16 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
 
                             if let Some(id) = target_id {
                                 if let Some(conv) = state.session_mgr.get_conversation(&id).await {
+                                    // For mobile clients, limit initial sync to recent messages for instant load
+                                    let sync_messages = if conv.messages.len() > 120 {
+                                        conv.messages[conv.messages.len() - 120..].to_vec()
+                                    } else {
+                                        conv.messages
+                                    };
                                     let _ = direct_tx
                                         .send(ServerMessage::HistorySync {
                                             conversation_id: conv.id,
-                                            messages: conv.messages,
+                                            messages: sync_messages,
                                             is_busy: conv.is_busy,
                                             island_state: conv.current_island_state,
                                         })

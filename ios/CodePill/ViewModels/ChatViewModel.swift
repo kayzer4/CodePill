@@ -10,6 +10,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     @Published public var inputText: String = ""
     @Published public var attachments: [AttachmentItem] = []
     @Published public var isExecuting: Bool = false
+    @Published public var isSyncing: Bool = false
     @Published public var currentIslandState: CodePillAttributes.ContentState?
     @Published public var selectedModel: String = "gemini-3.8-flash-medium"
     @Published public var currentConversationId: String? = nil
@@ -93,14 +94,17 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         UserDefaults.standard.set(convId, forKey: "codepill_active_conv_id")
 
         let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(convId).json")
-        let toSave = allMessages.isEmpty ? messages : allMessages
-        if let data = try? JSONEncoder().encode(toSave) {
-            try? data.write(to: messagesFile)
-        }
-
         let convsFile = getDocumentsDirectory().appendingPathComponent("cache_conversations.json")
-        if let data = try? JSONEncoder().encode(conversations) {
-            try? data.write(to: convsFile)
+        let toSave = allMessages.isEmpty ? messages : allMessages
+        let convs = conversations
+
+        DispatchQueue.global(qos: .utility).async {
+            if let data = try? JSONEncoder().encode(toSave) {
+                try? data.write(to: messagesFile)
+            }
+            if let data = try? JSONEncoder().encode(convs) {
+                try? data.write(to: convsFile)
+            }
         }
     }
 
@@ -360,17 +364,26 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     public func syncCurrentConversation() {
         guard let convId = currentConversationId else { return }
         client.activeConversationId = convId
+        isSyncing = true
         if client.isConnected {
             client.sendSync(conversationId: convId)
             client.requestConversationsList()
         } else {
             client.ensureConnectedAndSync()
         }
+
+        // Safety timeout to clear isSyncing if server fails to reply
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            if self?.isSyncing == true {
+                self?.isSyncing = false
+            }
+        }
     }
 
     public func cancelTurn() {
         client.cancelTurn()
         isExecuting = false
+        isSyncing = false
         Haptics.shared.notify(.warning)
     }
 
@@ -384,7 +397,8 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func clientDidDisconnect(error: Error?) {
         self.isConnected = false
-        isExecuting = false
+        self.isExecuting = false
+        self.isSyncing = false
         Haptics.shared.notify(.error)
     }
 
@@ -486,6 +500,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         isBusy: Bool,
         islandState: CodePillAttributes.ContentState?
     ) {
+        self.isSyncing = false
         self.currentConversationId = conversationId
         self.client.activeConversationId = conversationId
 
@@ -500,7 +515,20 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         }
 
         applyMessages(merged)
-        self.isExecuting = isBusy
+
+        // Protect isExecuting: do not let an in-flight stale sync turn off isExecuting
+        // unless the server actually reports isBusy=false AND we are not awaiting an assistant turn
+        if self.isExecuting {
+            let hasAssistantResponse = merged.last?.role == .assistant && !(merged.last?.text.isEmpty ?? true)
+            if isBusy {
+                self.isExecuting = true
+            } else if hasAssistantResponse {
+                self.isExecuting = false
+            }
+        } else {
+            self.isExecuting = isBusy
+        }
+
         self.currentIslandState = islandState
         saveCache()
     }
@@ -529,6 +557,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func didReceiveError(_ message: String) {
         isExecuting = false
+        isSyncing = false
         messages.append(ChatMessage(role: .system, text: "⚠️ Error: \(message)"))
         Haptics.shared.notify(.error)
     }

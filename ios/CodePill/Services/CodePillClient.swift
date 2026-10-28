@@ -117,7 +117,18 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
 
     // MARK: - Connection Management
 
+    private var isConnecting: Bool = false
+
     public func connect() {
+        if isConnected && webSocketTask?.state == .running {
+            print("[CodePill] Already connected, skipping connect()")
+            return
+        }
+        if isConnecting {
+            print("[CodePill] Connection already in flight, skipping duplicate connect()")
+            return
+        }
+        isConnecting = true
         isExplicitDisconnect = false
         cleanUpSocket()
 
@@ -133,6 +144,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     }
 
     public func disconnect() {
+        isConnecting = false
         isExplicitDisconnect = true
         cleanUpSocket()
         isConnected = false
@@ -180,6 +192,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     ) {
         Task { @MainActor in
             print("[CodePill] WebSocket officially connected!")
+            self.isConnecting = false
             self.isConnected = true
             self.delegate?.clientDidConnect()
             self.startHeartbeat()
@@ -199,6 +212,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
     ) {
         Task { @MainActor in
             print("[CodePill] WebSocket closed by server: \(closeCode)")
+            self.isConnecting = false
             self.isConnected = false
             self.pingTimer?.invalidate()
             self.pingTimer = nil
@@ -216,6 +230,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         if let error = error {
             print("[CodePill] WebSocket task failed with error: \(error)")
             Task { @MainActor in
+                self.isConnecting = false
                 self.isConnected = false
                 self.lastErrorMessage = error.localizedDescription
                 self.delegate?.clientDidDisconnect(error: error)

@@ -11,6 +11,7 @@ public struct ContentView: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showFilePicker: Bool = false
     @State private var isAtBottom: Bool = true
+    @State private var userScrolledUp: Bool = false
     @State private var hasInitialScrolled: Bool = false
     @State private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
 
@@ -41,6 +42,27 @@ public struct ContentView: View {
                         .padding(.horizontal, 14)
                         .padding(.top, 4)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                if viewModel.isSyncing {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .tint(.cyan)
+                        Text("Синхронизация истории...")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.cyan.opacity(0.35), lineWidth: 0.8)
+                    )
+                    .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+                    .padding(.top, 4)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
                 // Chat stream with smart auto-scroll & floating bottom button
@@ -98,6 +120,7 @@ public struct ContentView: View {
                                     .onAppear {
                                         withAnimation(.easeInOut(duration: 0.2)) {
                                             isAtBottom = true
+                                            userScrolledUp = false
                                         }
                                     }
                                     .onDisappear {
@@ -108,7 +131,16 @@ public struct ContentView: View {
                             }
                             .padding(.vertical, 12)
                         }
-                        .defaultScrollAnchorBottom()
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 8)
+                                .onChanged { value in
+                                    if value.translation.height > 8 {
+                                        // Пользователь тянет пальцем вниз = прокручивает историю вверх
+                                        userScrolledUp = true
+                                        isAtBottom = false
+                                    }
+                                }
+                        )
                         .refreshable {
                             await viewModel.refreshCurrentSessionAsync()
                         }
@@ -124,23 +156,25 @@ public struct ContentView: View {
                         }
                         .onChange(of: viewModel.currentConversationId) { _ in
                             hasInitialScrolled = false
+                            userScrolledUp = false
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                 scrollToBottom(proxy: proxy, animated: false)
                             }
                         }
                         .onChange(of: viewModel.isExecuting) { executing in
                             if executing {
+                                userScrolledUp = false
                                 isAtBottom = true
                                 scrollToBottom(proxy: proxy, animated: true)
                             }
                         }
                         .onChange(of: viewModel.messages.last?.text) { _ in
-                            if isAtBottom {
+                            if isAtBottom && !userScrolledUp {
                                 proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
                             }
                         }
                         .onChange(of: viewModel.messages.last?.toolCalls.count) { _ in
-                            if isAtBottom {
+                            if isAtBottom && !userScrolledUp {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                     proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
                                 }
@@ -152,7 +186,7 @@ public struct ContentView: View {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                     scrollToBottom(proxy: proxy, animated: false)
                                 }
-                            } else if isAtBottom {
+                            } else if isAtBottom && !userScrolledUp {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                     proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
                                 }
@@ -160,17 +194,14 @@ public struct ContentView: View {
                         }
 
                         // Floating "Scroll to Bottom" Button (like ChatGPT & Telegram)
-                        if !isAtBottom {
+                        if !isAtBottom || userScrolledUp {
                             Button {
+                                userScrolledUp = false
+                                isAtBottom = true
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                     proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
                                 }
                                 Haptics.shared.impact(.light)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        isAtBottom = true
-                                    }
-                                }
                             } label: {
                                 ZStack {
                                     Circle()
@@ -290,7 +321,7 @@ public struct ContentView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
 
-                            if viewModel.isExecuting {
+                            if viewModel.isSyncing || viewModel.isExecuting {
                                 ProgressView()
                                     .scaleEffect(0.5)
                                     .frame(width: 8, height: 8)
@@ -496,6 +527,9 @@ public struct ContentView: View {
         if !viewModel.isConnected {
             return .orange
         }
+        if viewModel.isSyncing {
+            return .cyan
+        }
         if viewModel.isExecuting {
             return Color.accentColor
         }
@@ -505,6 +539,9 @@ public struct ContentView: View {
     private var statusIndicatorText: String {
         if !viewModel.isConnected {
             return "Offline"
+        }
+        if viewModel.isSyncing {
+            return "Синхронизация..."
         }
         if viewModel.isExecuting {
             if let file = viewModel.currentIslandState?.currentFile {
