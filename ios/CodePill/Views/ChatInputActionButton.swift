@@ -30,56 +30,65 @@ public struct ChatInputActionButton: View {
         } label: {
             ZStack {
                 if isExecuting {
-                    // TimelineView ensures active 60fps frame rendering without getting blocked by state updates
+                    // TimelineView ensures smooth 60fps frame rendering
                     TimelineView(.animation) { timeline in
                         let time = timeline.date.timeIntervalSinceReferenceDate
-                        let angle = (time.truncatingRemainder(dividingBy: 2.5)) / 2.5 * 360.0
-                        let pulse = 0.85 + 0.15 * sin(time * 3.0)
+                        let spinAngle = (time.truncatingRemainder(dividingBy: 1.4)) / 1.4 * 360.0
+                        let pulse = 0.8 + 0.2 * sin(time * 3.2)
 
                         ZStack {
-                            // Monochromatic soft ambient aura
+                            // Soft breathing ambient glow
                             Circle()
                                 .fill(
                                     RadialGradient(
                                         colors: [
-                                            Color.accentColor.opacity(0.35 * pulse),
-                                            Color.accentColor.opacity(0.08),
+                                            Color.accentColor.opacity(0.25 * pulse),
+                                            Color.accentColor.opacity(0.05),
                                             Color.clear
                                         ],
                                         center: .center,
-                                        startRadius: 8,
-                                        endRadius: 22
+                                        startRadius: 6,
+                                        endRadius: 20
                                     )
                                 )
-                                .frame(width: 44, height: 44)
+                                .frame(width: 40, height: 40)
 
-                            // 4 moving orbital glowing dots in Claude style
-                            ForEach(0..<4) { index in
-                                let itemAngle = angle + Double(index) * 90.0
-                                Circle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 3.2, height: 3.2)
-                                    .shadow(color: Color.accentColor.opacity(0.85), radius: 3, x: 0, y: 0)
-                                    .offset(
-                                        x: 15 * cos(itemAngle * .pi / 180),
-                                        y: 15 * sin(itemAngle * .pi / 180)
-                                    )
-                            }
-
-                            // Thin guide circle
+                            // Subtle background track ring
                             Circle()
-                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1.2)
-                                .frame(width: 30, height: 30)
+                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 2)
+                                .frame(width: 29, height: 29)
+
+                            // Sleek spinning gradient arc
+                            Circle()
+                                .trim(from: 0.08, to: 0.78)
+                                .stroke(
+                                    AngularGradient(
+                                        gradient: Gradient(colors: [
+                                            Color.accentColor,
+                                            Color.purple.opacity(0.85),
+                                            Color.accentColor.opacity(0.15)
+                                        ]),
+                                        center: .center
+                                    ),
+                                    style: StrokeStyle(lineWidth: 2.4, lineCap: .round)
+                                )
+                                .frame(width: 29, height: 29)
+                                .rotationEffect(.degrees(spinAngle))
+                                .shadow(color: Color.accentColor.opacity(0.45 * pulse), radius: 3)
 
                             // Glass center disc
                             Circle()
-                                .fill(Color(UIColor.secondarySystemBackground).opacity(0.9))
-                                .frame(width: 24, height: 24)
+                                .fill(Color(UIColor.secondarySystemBackground).opacity(0.92))
+                                .frame(width: 21, height: 21)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.8)
+                                )
 
                             // Stop icon square
-                            RoundedRectangle(cornerRadius: 2.8, style: .continuous)
+                            RoundedRectangle(cornerRadius: 2.4, style: .continuous)
                                 .fill(Color.primary)
-                                .frame(width: 9, height: 9)
+                                .frame(width: 8, height: 8)
                         }
                     }
                 } else {

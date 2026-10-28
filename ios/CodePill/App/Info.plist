@@ -24,6 +24,10 @@
     <true/>
     <key>NSSupportsLiveActivitiesFrequentUpdates</key>
     <true/>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>CodePill allows choosing photos and screenshots to attach to prompts.</string>
+    <key>UILaunchScreen</key>
+    <dict/>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>

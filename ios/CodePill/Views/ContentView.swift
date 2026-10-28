@@ -9,6 +9,7 @@ public struct ContentView: View {
     @State private var showSideDrawer: Bool = false
     @State private var dragOffset: CGFloat = 0
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var showPhotoPicker: Bool = false
     @State private var showFilePicker: Bool = false
     @State private var isAtBottom: Bool = true
     @State private var userScrolledUp: Bool = false
@@ -413,13 +414,23 @@ public struct ContentView: View {
             handleURLTap(url)
             return .handled
         })
+        .photosPicker(
+            isPresented: $showPhotoPicker,
+            selection: $selectedPhotoItem,
+            matching: .images,
+            photoLibrary: .shared()
+        )
         .onChange(of: selectedPhotoItem) { newItem in
             guard let newItem = newItem else { return }
             Task {
                 if let data = try? await newItem.loadTransferable(type: Data.self) {
-                    viewModel.addPhotoData(data, filename: "photo_\(Int(Date().timeIntervalSince1970)).jpg")
+                    await MainActor.run {
+                        viewModel.addPhotoData(data, filename: "photo_\(Int(Date().timeIntervalSince1970)).jpg")
+                    }
                 }
-                selectedPhotoItem = nil
+                await MainActor.run {
+                    selectedPhotoItem = nil
+                }
             }
         }
         .fileImporter(
@@ -602,7 +613,9 @@ public struct ContentView: View {
         HStack(spacing: 8) {
             // Attachment menu
             Menu {
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                Button {
+                    showPhotoPicker = true
+                } label: {
                     Label("Attach Photo", systemImage: "photo.on.rectangle")
                 }
                 Button {

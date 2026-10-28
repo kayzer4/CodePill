@@ -22,6 +22,7 @@ targets:
         UILaunchScreen: {}
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
+        NSPhotoLibraryUsageDescription: "CodePill allows choosing photos and screenshots to attach to prompts."
         NSLocalNetworkUsageDescription: "CodePill connects to your local Arch Linux server for Antigravity coding."
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
