@@ -88,20 +88,13 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
                   let window = self.window else { return false }
 
             let velocity = pan.velocity(in: window)
-            let location = pan.location(in: window)
-            let screenWidth = window.bounds.width
 
             if isOpen {
-                // When drawer is open, capture swipe left from anywhere to close
+                // When drawer is open: swipe left from anywhere on the entire screen to close
                 return velocity.x < -20 && abs(velocity.x) > abs(velocity.y) * 1.15
             } else {
-                // When drawer is closed:
-                // 1. Must begin in left 60% of the screen ("чуть больше чем на половину экрана")
-                let maxStartX = screenWidth * 0.60
-                guard location.x <= maxStartX else { return false }
-
-                // 2. Must be strictly horizontal to the right
-                return velocity.x > 30 && abs(velocity.x) > abs(velocity.y) * 1.3
+                // When drawer is closed: swipe right from anywhere on the entire screen to open
+                return velocity.x > 25 && abs(velocity.x) > abs(velocity.y) * 1.25
             }
         }
 

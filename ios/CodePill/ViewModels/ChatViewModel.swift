@@ -43,8 +43,19 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     /// Установить полный список и показать только последние pageSize
     private func applyMessages(_ newMessages: [ChatMessage]) {
-        allMessages = newMessages
-        displayedCount = min(pageSize, newMessages.count)
+        var merged = newMessages
+        // Сохраняем локальное отправленное сообщение пользователя, если сервер ещё не успел включить его в историю синхронизации
+        if let lastLocal = allMessages.last ?? messages.last, lastLocal.role == .user {
+            let alreadyHasIt = newMessages.contains(where: {
+                $0.id == lastLocal.id || ($0.role == .user && $0.text == lastLocal.text)
+            })
+            if !alreadyHasIt {
+                merged.append(lastLocal)
+            }
+        }
+
+        allMessages = merged
+        displayedCount = min(pageSize, merged.count)
         messages = Array(allMessages.suffix(displayedCount))
         canLoadMore = displayedCount < allMessages.count
     }
@@ -81,7 +92,8 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         UserDefaults.standard.set(convId, forKey: "codepill_active_conv_id")
 
         let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(convId).json")
-        if let data = try? JSONEncoder().encode(messages) {
+        let toSave = allMessages.isEmpty ? messages : allMessages
+        if let data = try? JSONEncoder().encode(toSave) {
             try? data.write(to: messagesFile)
         }
 
@@ -312,7 +324,9 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             attachments: attachments
         )
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            allMessages.append(userMsg)
             messages.append(userMsg)
+            displayedCount += 1
         }
         let currentAttachments = attachments
         attachments = []
@@ -464,7 +478,18 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     ) {
         self.currentConversationId = conversationId
         self.client.activeConversationId = conversationId
-        applyMessages(messages)
+
+        // Preserve optimistic user messages if sync arrives before server persisted it
+        var merged = messages
+        if isExecuting {
+            for localMsg in self.messages where localMsg.role == .user {
+                if !merged.contains(where: { $0.text == localMsg.text }) {
+                    merged.append(localMsg)
+                }
+            }
+        }
+
+        applyMessages(merged)
         self.isExecuting = isBusy
         self.currentIslandState = islandState
         saveCache()
