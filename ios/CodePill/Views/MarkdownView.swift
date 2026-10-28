@@ -16,18 +16,7 @@ public struct MarkdownMessageView: View {
                 case .code(let lang, let code):
                     CodeBlockCard(language: lang, code: code)
                 case .text(let content):
-                    if content.count > 4000 {
-                        // Very long text — skip LocalizedStringKey to avoid crash
-                        Text(content)
-                            .font(.body)
-                            .foregroundStyle(isUser ? .white : .primary)
-                            .textSelection(.enabled)
-                    } else {
-                        Text(LocalizedStringKey(content))
-                            .font(.body)
-                            .foregroundStyle(isUser ? .white : .primary)
-                            .textSelection(.enabled)
-                    }
+                    FormattedTextView(rawText: content, isUser: isUser)
                 }
             }
         }
@@ -81,6 +70,38 @@ public struct MarkdownMessageView: View {
     }
 }
 
+/// Renders markdown text using native AttributedString so that inline links, bold, code inside links (`[`code`](url)`) work reliably
+public struct FormattedTextView: View {
+    public let rawText: String
+    public let isUser: Bool
+
+    public var body: some View {
+        Text(renderedAttributedString)
+            .font(.body)
+            .foregroundStyle(isUser ? .white : .primary)
+            .textSelection(.enabled)
+    }
+
+    private var renderedAttributedString: AttributedString {
+        // Fix inline code inside links like [`name`](url) which Swift markdown parser fails on
+        let preprocessed = rawText.replacingOccurrences(
+            of: #"\[`([^`]+)`\]\(([^)]+)\)"#,
+            with: "[$1]($2)",
+            options: .regularExpression
+        )
+
+        do {
+            let options = AttributedString.MarkdownParsingOptions(
+                allowsExtendedAttributes: true,
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+            return try AttributedString(markdown: preprocessed, options: options)
+        } catch {
+            return AttributedString(rawText)
+        }
+    }
+}
+
 public struct CodeBlockCard: View {
     public let language: String
     public let code: String
@@ -88,76 +109,47 @@ public struct CodeBlockCard: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // iOS 26 Cyber-Glass Header bar
-            HStack(spacing: 8) {
-                // Language pill
-                Text(language.isEmpty ? "CODE" : language.uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.16))
-                    .clipShape(Capsule())
+            // Header Bar
+            HStack {
+                Text(language.uppercased())
+                    .font(.caption2.bold().monospaced())
+                    .foregroundStyle(.secondary)
 
                 Spacer()
 
-                // Share snippet
-                ShareLink(item: code) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(5)
-                }
-                .buttonStyle(.plain)
-
-                // Copy code
                 Button {
                     UIPasteboard.general.string = code
+                    withAnimation { copied = true }
                     Haptics.shared.notify(.success)
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { copied = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
                         withAnimation { copied = false }
                     }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            .font(.caption2)
                         Text(copied ? "Copied" : "Copy")
+                            .font(.caption2.monospaced())
                     }
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(copied ? .green : .secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Color.white.opacity(copied ? 0.12 : 0.06))
-                    .clipShape(Capsule())
+                    .foregroundStyle(copied ? Color.green : Color.secondary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(UIColor.secondarySystemBackground).opacity(0.6))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(UIColor.secondarySystemBackground).opacity(0.85))
 
-            // Code content
+            Divider()
+
+            // Code Body
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.92))
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .padding(12)
+                    .textSelection(.enabled)
             }
         }
-        .background(Color.black.opacity(0.85))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.8
-                )
-        )
-        .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 3)
+        .liquidGlass(cornerRadius: 14, specularOpacity: 0.15)
     }
 }
