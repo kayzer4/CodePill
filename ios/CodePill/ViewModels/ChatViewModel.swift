@@ -25,6 +25,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     private var allMessages: [ChatMessage] = []              // полный список
     private let pageSize: Int = 30                           // сколько показывать за раз
     private var displayedCount: Int = 30
+    private var isExplicitNewChat: Bool = false
 
     public let client: CodePillClient
     private var currentAssistantMessageId: UUID?
@@ -71,10 +72,24 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             self.currentConversationId = UUID().uuidString
         }
         self.client.activeConversationId = self.currentConversationId
+        loadConversationsFast()
+    }
+
+    public func loadConversationsFast() {
+        Task { @MainActor in
+            do {
+                let list = try await client.fetchConversations()
+                self.didReceiveConversationsList(list)
+            } catch {
+                print("[CodePill] HTTP conversations fetch failed (will rely on WS): \(error)")
+            }
+        }
     }
 
     public func startNewChat() {
+        self.isExplicitNewChat = true
         self.currentConversationId = UUID().uuidString
+        self.client.activeConversationId = self.currentConversationId
         self.allMessages = []
         self.messages = []
         self.canLoadMore = false
@@ -205,12 +220,15 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     }
 
     public func selectConversation(_ item: ConversationItem) {
+        self.isExplicitNewChat = false
         self.currentConversationId = item.id
         client.activeConversationId = item.id
         let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(item.id).json")
         if let data = try? Data(contentsOf: messagesFile),
            let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
             applyMessages(list)
+        } else {
+            applyMessages([])
         }
         syncCurrentConversation()
         Haptics.shared.selection()
@@ -358,11 +376,16 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func handleAppForeground() {
         print("[CodePill] handleAppForeground: ensuring connection and syncing...")
+        loadConversationsFast()
         syncCurrentConversation()
     }
 
     public func syncCurrentConversation() {
-        guard let convId = currentConversationId else { return }
+        loadConversationsFast()
+        guard let convId = currentConversationId else {
+            client.requestConversationsList()
+            return
+        }
         client.activeConversationId = convId
         isSyncing = true
         if client.isConnected {
@@ -373,7 +396,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         }
 
         // Safety timeout to clear isSyncing if server fails to reply
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
             if self?.isSyncing == true {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     self?.isSyncing = false
@@ -558,8 +581,12 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         self.conversations = list
         saveCache()
         // Если при входе в чат текущий диалог пуст (например новый UUID), а на сервере есть история — сразу синхронизируем последний диалог
-        if allMessages.isEmpty && messages.isEmpty, let first = list.first {
-            selectConversation(first)
+        if !isExplicitNewChat {
+            if allMessages.isEmpty && messages.isEmpty, let first = list.first {
+                selectConversation(first)
+            } else if let curr = currentConversationId, !list.contains(where: { $0.id == curr }), let first = list.first {
+                selectConversation(first)
+            }
         }
     }
 

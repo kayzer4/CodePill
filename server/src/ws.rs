@@ -127,6 +127,15 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                                             island_state: conv.current_island_state,
                                         })
                                         .await;
+                                } else {
+                                    let _ = direct_tx
+                                        .send(ServerMessage::HistorySync {
+                                            conversation_id: id,
+                                            messages: vec![],
+                                            is_busy: false,
+                                            island_state: None,
+                                        })
+                                        .await;
                                 }
                             }
                         }

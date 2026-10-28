@@ -641,6 +641,17 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
 
     // MARK: - REST API Helpers
 
+    public func fetchConversations() async throws -> [ConversationItem] {
+        let url = baseURL.appendingPathComponent("api/conversations")
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 8
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode([ConversationItem].self, from: data)
+    }
+
     public func fetchAccount() async throws -> AccountInfo {
         let url = baseURL.appendingPathComponent("api/account")
         let (data, _) = try await URLSession.shared.data(from: url)
