@@ -83,7 +83,7 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
             }
         }
 
-        public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        public override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
                   let window = self.window else { return false }
 
