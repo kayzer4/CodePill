@@ -30,9 +30,21 @@ public struct MessageRow: View {
                     attachmentsView
                 }
 
-                // Tool calls grouped in a collapsible accordion
-                if !message.toolCalls.isEmpty {
-                    CompactToolsAccordion(toolCalls: message.toolCalls)
+                // Dedicated prominent cards for scheduled timers
+                let scheduleCalls = message.toolCalls.filter { $0.name == "schedule" }
+                if !scheduleCalls.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(scheduleCalls) { sched in
+                            ScheduleTimerRow(item: sched)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                // General tool calls grouped in a collapsible accordion
+                let otherTools = message.toolCalls.filter { $0.name != "schedule" }
+                if !otherTools.isEmpty {
+                    CompactToolsAccordion(toolCalls: otherTools)
                         .padding(.vertical, 2)
                 }
 

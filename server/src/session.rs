@@ -34,6 +34,12 @@ pub struct SessionManager {
     active_pids: Arc<RwLock<HashMap<String, u32>>>,
 }
 
+fn extract_duration_seconds(val: &serde_json::Value) -> Option<u64> {
+    val.as_u64().or_else(|| {
+        val.as_str().and_then(|s| s.trim_matches('"').parse::<u64>().ok())
+    })
+}
+
 impl SessionManager {
     pub fn new(agy_binary: String, workspace: String, proxy_mgr: Arc<ProxyManager>) -> Self {
         let (broadcast_tx, _) = broadcast::channel(500);
@@ -153,8 +159,9 @@ impl SessionManager {
                                 } else if let Some(p) = a.get("Path").and_then(|p| p.as_str()) {
                                     format!("File: {}", truncate(p.trim_matches('"'), 30))
                                 } else if name == "schedule" {
-                                    if let Some(secs) = a.get("DurationSeconds").and_then(|d| d.as_u64()) {
-                                        format!("Schedule timer ({}s)", secs)
+                                    let secs = a.get("DurationSeconds").and_then(extract_duration_seconds);
+                                    if let Some(s) = secs {
+                                        format!("Schedule timer ({}s)", s)
                                     } else if let Some(cron) = a.get("CronExpression").and_then(|c| c.as_str()) {
                                         format!("Schedule cron: {}", cron)
                                     } else {
@@ -447,6 +454,14 @@ impl SessionManager {
                                 running_tasks.insert(tid);
                             }
                         }
+                        if let Some(t_idx) = content.find("Timer: ") {
+                            let sub = &content[t_idx + 7..];
+                            if let Some(s_idx) = sub.find('s') {
+                                if let Ok(secs) = sub[..s_idx].trim().parse::<u64>() {
+                                    schedule_duration = Some(secs);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -466,7 +481,7 @@ impl SessionManager {
                             let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("");
                             if name == "schedule" {
                                 if let Some(args) = t.get("args") {
-                                    if let Some(secs) = args.get("DurationSeconds").and_then(|d| d.as_u64()) {
+                                    if let Some(secs) = args.get("DurationSeconds").and_then(extract_duration_seconds) {
                                         schedule_duration = Some(secs);
                                     }
                                 }
@@ -920,16 +935,17 @@ impl SessionManager {
                                     }
                                     "search_web" => "Searching web".to_string(),
                                     "schedule" => {
-                                        if let Some(secs) = tool_info
+                                        let secs = tool_info
                                             .and_then(|i| i.pointer("/parameters/DurationSeconds"))
-                                            .and_then(|s| s.as_u64()) {
-                                            format!("Schedule timer ({}s)", secs)
+                                            .and_then(extract_duration_seconds);
+                                        if let Some(s) = secs {
+                                            format!("Schedule timer ({}s)", s)
                                         } else if let Some(cron) = tool_info
                                             .and_then(|i| i.pointer("/parameters/CronExpression"))
                                             .and_then(|c| c.as_str()) {
                                             format!("Schedule cron: {}", cron)
                                         } else {
-                                            "Setting schedule".to_string()
+                                            "Schedule timer".to_string()
                                         }
                                     }
                                     "manage_task" => "Managing tasks".to_string(),
