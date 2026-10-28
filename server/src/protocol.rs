@@ -109,6 +109,13 @@ pub enum ClientMessage {
         conversation_id: String,
     },
 
+    /// Rename a conversation
+    #[serde(rename = "rename_conversation")]
+    RenameConversation {
+        conversation_id: String,
+        new_title: String,
+    },
+
     /// Register APNs Live Activity push token for Dynamic Island
     #[serde(rename = "register_live_activity")]
     RegisterLiveActivity {

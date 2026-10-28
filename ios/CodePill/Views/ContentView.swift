@@ -5,11 +5,14 @@ import UniformTypeIdentifiers
 public struct ContentView: View {
     @StateObject private var viewModel: ChatViewModel
     @State private var showSettings: Bool = false
-    @State private var showConversations: Bool = false
+    @State private var showSideDrawer: Bool = false
+    @State private var dragOffset: CGFloat = 0
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showFilePicker: Bool = false
     @State private var isAtBottom: Bool = true
     @State private var hasInitialScrolled: Bool = false
+
+    private let drawerWidth: CGFloat = 300
 
     public init(client: CodePillClient) {
         _viewModel = StateObject(wrappedValue: ChatViewModel(client: client))
@@ -26,8 +29,9 @@ public struct ContentView: View {
     }
 
     public var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
+        ZStack(alignment: .leading) {
+            NavigationStack {
+                VStack(spacing: 0) {
                 // Dynamic Island mirror preview when busy
                 if let island = viewModel.currentIslandState {
                     LiveIslandPreview(state: island)
@@ -266,7 +270,9 @@ public struct ContentView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         viewModel.client.requestConversationsList()
-                        showConversations = true
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                            showSideDrawer.toggle()
+                        }
                         Haptics.shared.selection()
                     } label: {
                         Image(systemName: "sidebar.left")
@@ -351,9 +357,7 @@ public struct ContentView: View {
                 selectedModel: $viewModel.selectedModel
             )
         }
-        .sheet(isPresented: $showConversations) {
-            ConversationsSheet(viewModel: viewModel)
-        }
+
         .sheet(isPresented: Binding(
             get: { viewModel.activeWebURL != nil },
             set: { if !$0 { viewModel.activeWebURL = nil } }
@@ -401,7 +405,72 @@ public struct ContentView: View {
                 print("[CodePill] File picker error: \(err)")
             }
         }
+
+        // Darkened Backdrop for Drawer
+        if showSideDrawer || dragOffset > 0 {
+            let opacity = Double(min(0.5, (showSideDrawer ? 0.45 : 0) + (dragOffset / drawerWidth) * 0.45))
+            Color.black.opacity(opacity)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        showSideDrawer = false
+                        dragOffset = 0
+                    }
+                }
+                .transition(.opacity)
+        }
+
+        // Sliding Side Drawer
+        let currentX: CGFloat = showSideDrawer
+            ? min(0, dragOffset)
+            : -drawerWidth + max(0, dragOffset)
+
+        SideConversationsDrawer(
+            viewModel: viewModel,
+            isOpen: $showSideDrawer
+        )
+        .frame(width: drawerWidth)
+        .offset(x: currentX)
+        .ignoresSafeArea(edges: .vertical)
+        .shadow(color: Color.black.opacity(showSideDrawer ? 0.35 : 0), radius: 16, x: 6, y: 0)
     }
+    // Edge drag gesture to open / close drawer
+    .gesture(
+        DragGesture()
+            .onChanged { value in
+                let startX = value.startLocation.x
+                let translation = value.translation.width
+
+                if !showSideDrawer {
+                    if startX < 45 && translation > 0 {
+                        dragOffset = min(drawerWidth, translation)
+                    }
+                } else {
+                    if translation < 0 {
+                        dragOffset = max(-drawerWidth, translation)
+                    }
+                }
+            }
+            .onEnded { value in
+                let velocity = value.predictedEndTranslation.width
+
+                if !showSideDrawer {
+                    if dragOffset > 75 || velocity > 200 {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                            showSideDrawer = true
+                        }
+                    }
+                } else {
+                    if dragOffset < -75 || velocity < -200 {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                            showSideDrawer = false
+                        }
+                    }
+                }
+                dragOffset = 0
+            }
+    )
+}
 
     private var currentConversationTitle: String {
         if let currentId = viewModel.currentConversationId,

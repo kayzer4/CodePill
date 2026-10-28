@@ -289,6 +289,18 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         Haptics.shared.notify(.warning)
     }
 
+    public func renameConversation(id: String, newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if let idx = conversations.firstIndex(where: { $0.id == id }) {
+            conversations[idx].title = trimmed
+        }
+        client.sendRenameConversation(conversationId: id, newTitle: trimmed)
+        saveCache()
+        Haptics.shared.notify(.success)
+    }
+
     public func sendMessage() {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }

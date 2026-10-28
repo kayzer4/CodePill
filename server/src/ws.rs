@@ -146,6 +146,16 @@ async fn handle_socket(socket: WebSocket, state: AppState, addr: SocketAddr) {
                                 })
                                 .await;
                         }
+                        ClientMessage::RenameConversation { conversation_id, new_title } => {
+                            info!("Renaming conversation {} to {}", conversation_id, new_title);
+                            state.session_mgr.rename_conversation(&conversation_id, &new_title).await;
+                            let list = state.session_mgr.list_conversations().await;
+                            let _ = direct_tx
+                                .send(ServerMessage::ConversationsList {
+                                    conversations: list,
+                                })
+                                .await;
+                        }
                         ClientMessage::ActionResponse { action_id, approved } => {
                             info!("Action {} response: {}", action_id, approved);
                         }

@@ -345,6 +345,21 @@ impl SessionManager {
         let _ = tokio::fs::remove_dir_all(&brain_path).await;
     }
 
+    pub async fn rename_conversation(&self, id: &str, new_title: &str) {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+        let db_path = format!("{}/.gemini/antigravity-cli/conversation_summaries.db", home);
+        if std::path::Path::new(&db_path).exists() {
+            let escaped_title = new_title.replace('\'', "''");
+            let escaped_id = id.replace('\'', "");
+            let sql = format!("UPDATE conversation_summaries SET title = '{}' WHERE conversation_id = '{}';", escaped_title, escaped_id);
+            let _ = tokio::process::Command::new("sqlite3")
+                .arg(&db_path)
+                .arg(&sql)
+                .output()
+                .await;
+        }
+    }
+
     pub async fn rollback(&self, conversation_id: &str) -> Option<(Vec<StoredMessage>, Option<String>)> {
         let mut convs = self.conversations.write().await;
         if let Some(conv) = convs.get_mut(conversation_id) {
