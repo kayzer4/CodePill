@@ -188,6 +188,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func selectConversation(_ item: ConversationItem) {
         self.currentConversationId = item.id
+        client.activeConversationId = item.id
         let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(item.id).json")
         if let data = try? Data(contentsOf: messagesFile),
            let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
@@ -322,6 +323,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
         currentAssistantMessageId = nil
 
+        if let convId = currentConversationId {
+            client.activeConversationId = convId
+        }
+
         client.sendPrompt(
             trimmed,
             attachments: currentAttachments,
@@ -329,6 +334,15 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             model: selectedModel
         )
         saveCache()
+    }
+
+    public func handleAppForeground() {
+        print("[CodePill] handleAppForeground: ensuring connection and syncing...")
+        client.ensureConnectedAndSync()
+        if let convId = currentConversationId {
+            client.activeConversationId = convId
+            client.sendSync(conversationId: convId)
+        }
     }
 
     public func cancelTurn() {
@@ -449,6 +463,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         islandState: CodePillAttributes.ContentState?
     ) {
         self.currentConversationId = conversationId
+        self.client.activeConversationId = conversationId
         applyMessages(messages)
         self.isExecuting = isBusy
         self.currentIslandState = islandState

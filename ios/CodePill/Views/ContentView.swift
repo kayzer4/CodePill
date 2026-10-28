@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 public struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel: ChatViewModel
     @State private var showSettings: Bool = false
     @State private var showSideDrawer: Bool = false
@@ -11,6 +12,7 @@ public struct ContentView: View {
     @State private var showFilePicker: Bool = false
     @State private var isAtBottom: Bool = true
     @State private var hasInitialScrolled: Bool = false
+    @State private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
 
     private let drawerWidth: CGFloat = 300
 
@@ -29,8 +31,9 @@ public struct ContentView: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .leading) {
-            NavigationStack {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                NavigationStack {
                 VStack(spacing: 0) {
                 // Dynamic Island mirror preview when busy
                 if let island = viewModel.currentIslandState {
@@ -393,6 +396,27 @@ public struct ContentView: View {
                 print("[CodePill] File picker error: \(err)")
             }
         }
+        .onChange(of: scenePhase) { newPhase in
+            switch newPhase {
+            case .background:
+                if viewModel.isExecuting {
+                    backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "CodePillTurnExecution") {
+                        if backgroundTaskId != .invalid {
+                            UIApplication.shared.endBackgroundTask(backgroundTaskId)
+                            backgroundTaskId = .invalid
+                        }
+                    }
+                }
+            case .active:
+                if backgroundTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTaskId)
+                    backgroundTaskId = .invalid
+                }
+                viewModel.handleAppForeground()
+            default:
+                break
+            }
+        }
 
         // Darkened Backdrop for Drawer
         if showSideDrawer || dragOffset > 0 {
@@ -420,51 +444,59 @@ public struct ContentView: View {
         .frame(width: drawerWidth)
         .offset(x: currentX)
         .shadow(color: Color.black.opacity(showSideDrawer ? 0.35 : 0), radius: 16, x: 6, y: 0)
-        // High-priority gesture on the drawer itself to close smoothly
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    let translation = value.translation.width
-                    if translation < 0 {
-                        dragOffset = max(-drawerWidth, translation)
-                    }
+
+        // Window-level directional pan gesture helper:
+        // Works across left ~60% of the screen without conflicting with vertical chat scrolling
+        WindowDrawerPanHelper(
+            isOpen: showSideDrawer,
+            drawerWidth: drawerWidth,
+            onPanChanged: { translationX in
+                if showSideDrawer {
+                    dragOffset = min(0, max(-drawerWidth, translationX))
+                } else {
+                    dragOffset = max(0, min(drawerWidth, translationX))
                 }
-                .onEnded { value in
-                    let velocity = value.predictedEndTranslation.width
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                        if dragOffset < -50 || velocity < -120 {
+            },
+            onPanEnded: { translationX, velocityX in
+                if showSideDrawer {
+                    let shouldClose = translationX < -50 || velocityX < -150
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        if shouldClose {
                             showSideDrawer = false
                         }
                         dragOffset = 0
                     }
+                } else {
+                    let shouldOpen = translationX > 60 || velocityX > 150
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        if shouldOpen {
+                            showSideDrawer = true
+                        }
+                        dragOffset = 0
+                    }
                 }
+            }
         )
-
-        // Native left-edge swipe zone (strictly detects horizontal swipe from left 30pt edge)
-        if !showSideDrawer {
-            Color.clear
-                .frame(width: 30)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 10, coordinateSpace: .local)
-                        .onChanged { value in
-                            let x = value.translation.width
-                            let y = value.translation.height
-                            // Only activate if horizontal
-                            if x > 0 && x > abs(y) * 1.2 {
-                                dragOffset = min(drawerWidth, x)
-                            }
-                        }
-                        .onEnded { value in
-                            let velocity = value.predictedEndTranslation.width
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                                if dragOffset > 50 || velocity > 120 {
-                                    showSideDrawer = true
-                                }
-                                dragOffset = 0
-                            }
-                        }
-                )
+    }
+    .onChange(of: scenePhase) { newPhase in
+        switch newPhase {
+        case .background:
+            if viewModel.isExecuting {
+                backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "CodePillTurnExecution") {
+                    if backgroundTaskId != .invalid {
+                        UIApplication.shared.endBackgroundTask(backgroundTaskId)
+                        backgroundTaskId = .invalid
+                    }
+                }
+            }
+        case .active:
+            if backgroundTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(backgroundTaskId)
+                backgroundTaskId = .invalid
+            }
+            viewModel.handleAppForeground()
+        default:
+            break
         }
     }
 }

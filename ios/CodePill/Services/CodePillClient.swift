@@ -123,6 +123,7 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 30
+        configuration.waitsForConnectivity = true
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
         webSocketTask = session?.webSocketTask(with: wsURL)
         webSocketTask?.maximumMessageSize = 256 * 1024 * 1024 // 256 MB buffer for gigantic conversation histories
@@ -135,6 +136,30 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         isExplicitDisconnect = true
         cleanUpSocket()
         isConnected = false
+    }
+
+    public func ensureConnectedAndSync() {
+        if !isConnected || webSocketTask == nil || webSocketTask?.state != .running {
+            print("[CodePill] Socket not running or not connected on resume, connecting...")
+            connect()
+        } else {
+            // Verify socket is not a zombie connection after app was backgrounded
+            webSocketTask?.sendPing { [weak self] error in
+                if let error = error {
+                    print("[CodePill] Ping failed after resume (\(error)), reconnecting...")
+                    DispatchQueue.main.async {
+                        self?.connect()
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        if let convId = self?.activeConversationId {
+                            self?.sendSync(conversationId: convId)
+                        }
+                        self?.requestConversationsList()
+                    }
+                }
+            }
+        }
     }
 
     private func cleanUpSocket() {

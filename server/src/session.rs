@@ -571,11 +571,17 @@ impl SessionManager {
             needs_approval: false,
         };
 
+        // Reload full transcript from brain on disk to ensure 100% sync
+        let disk_messages = Self::load_antigravity_transcript(&conv_id).await;
+
         {
             let mut convs = self.conversations.write().await;
             if let Some(c) = convs.get_mut(&conv_id) {
                 c.is_busy = false;
                 c.current_island_state = Some(final_island.clone());
+                if !disk_messages.is_empty() {
+                    c.messages = disk_messages;
+                }
             }
         }
 
