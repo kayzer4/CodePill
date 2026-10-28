@@ -516,7 +516,10 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
                             ))
                         }
                     }
+                    let msgIdStr = m["id"] as? String ?? ""
+                    let msgUUID = UUID(uuidString: msgIdStr) ?? UUID()
                     chatMessages.append(ChatMessage(
+                        id: msgUUID,
                         role: role,
                         text: text,
                         toolCalls: tools

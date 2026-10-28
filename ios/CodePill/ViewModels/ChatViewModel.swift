@@ -46,13 +46,48 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     /// Установить полный список и показать только последние pageSize
     private func applyMessages(_ newMessages: [ChatMessage]) {
         var merged = newMessages
+
+        // Map local existing IDs so we never break SwiftUI view identities
+        var idMap: [String: UUID] = [:]
+        for m in allMessages {
+            let key = "\(m.role.rawValue):\(m.text.prefix(80))"
+            if idMap[key] == nil {
+                idMap[key] = m.id
+            }
+        }
+
+        merged = merged.map { m in
+            let key = "\(m.role.rawValue):\(m.text.prefix(80))"
+            if let existingId = idMap[key] {
+                return ChatMessage(
+                    id: existingId,
+                    role: m.role,
+                    text: m.text,
+                    toolCalls: m.toolCalls,
+                    attachments: m.attachments,
+                    timestamp: m.timestamp
+                )
+            }
+            return m
+        }
+
         // Сохраняем локальное отправленное сообщение пользователя, если сервер ещё не успел включить его в историю синхронизации
         if let lastLocal = allMessages.last ?? messages.last, lastLocal.role == .user {
-            let alreadyHasIt = newMessages.contains(where: {
+            let alreadyHasIt = merged.contains(where: {
                 $0.id == lastLocal.id || ($0.role == .user && $0.text == lastLocal.text)
             })
             if !alreadyHasIt {
                 merged.append(lastLocal)
+            }
+        }
+
+        // Check if messages are already identical: if so, SKIP to prevent scroll jump!
+        if allMessages.count == merged.count && messages.count == min(pageSize, merged.count) {
+            let matchesAll = zip(allMessages, merged).allSatisfy { (o, n) in
+                o.id == n.id && o.text == n.text && o.toolCalls.count == n.toolCalls.count
+            }
+            if matchesAll {
+                return
             }
         }
 

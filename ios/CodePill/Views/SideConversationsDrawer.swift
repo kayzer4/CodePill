@@ -3,6 +3,7 @@ import SwiftUI
 public struct SideConversationsDrawer: View {
     @ObservedObject public var viewModel: ChatViewModel
     @Binding public var isOpen: Bool
+    public var safeAreaLeading: CGFloat = 0
 
     @State private var searchText: String = ""
     @State private var sortNewestFirst: Bool = true
@@ -227,6 +228,7 @@ public struct SideConversationsDrawer: View {
                 .padding(.vertical, 8)
             }
         }
+        .padding(.leading, safeAreaLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             Color(UIColor.systemBackground)

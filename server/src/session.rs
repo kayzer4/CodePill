@@ -110,8 +110,10 @@ impl SessionManager {
         let mut reader = tokio::io::BufReader::new(file).lines();
         let mut messages: Vec<StoredMessage> = Vec::new();
         let mut pending_tools: Vec<StoredToolCall> = Vec::new();
+        let mut line_idx: u64 = 0;
 
         while let Ok(Some(line)) = reader.next_line().await {
+            line_idx += 1;
             if line.trim().is_empty() {
                 continue;
             }
@@ -122,6 +124,7 @@ impl SessionManager {
 
             let step_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
             let created_at = val.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let step_idx = val.get("step_index").and_then(|v| v.as_u64()).unwrap_or(line_idx);
 
             match step_type {
                 "USER_INPUT" => {
@@ -138,8 +141,12 @@ impl SessionManager {
                     };
 
                     if !clean_text.is_empty() {
+                        let msg_id = uuid::Uuid::new_v5(
+                            &uuid::Uuid::NAMESPACE_OID,
+                            format!("{}:{}:user", conv_id, step_idx).as_bytes(),
+                        ).to_string();
                         messages.push(StoredMessage {
-                            id: uuid::Uuid::new_v4().to_string(),
+                            id: msg_id,
                             role: "user".to_string(),
                             text: clean_text,
                             tool_calls: Vec::new(),
@@ -197,8 +204,12 @@ impl SessionManager {
 
                     if let Some(content) = content_opt {
                         let tools = std::mem::take(&mut pending_tools);
+                        let msg_id = uuid::Uuid::new_v5(
+                            &uuid::Uuid::NAMESPACE_OID,
+                            format!("{}:{}:assistant", conv_id, step_idx).as_bytes(),
+                        ).to_string();
                         messages.push(StoredMessage {
-                            id: uuid::Uuid::new_v4().to_string(),
+                            id: msg_id,
                             role: "assistant".to_string(),
                             text: content.to_string(),
                             tool_calls: tools,

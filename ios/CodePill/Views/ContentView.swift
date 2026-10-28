@@ -26,16 +26,8 @@ public struct ContentView: View {
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
         let targetId = "chatBottomAnchor"
         if animated {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
                 proxy.scrollTo(targetId, anchor: .bottom)
-                if let lastId = viewModel.messages.last?.id {
-                    proxy.scrollTo(lastId, anchor: .bottom)
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                    proxy.scrollTo(targetId, anchor: .bottom)
-                }
             }
         } else {
             proxy.scrollTo(targetId, anchor: .bottom)
@@ -120,50 +112,46 @@ public struct ContentView: View {
                                         }
                                     )
                                     .id(msg.id)
-                                    .transition(.opacity)
                                 }
 
                                 // Dedicated bottom scroll anchor & viewport detector
-                                Color.clear
-                                    .frame(height: 8)
-                                    .id("chatBottomAnchor")
-                                    .onAppear {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            isAtBottom = true
-                                            userScrolledUp = false
-                                        }
-                                    }
-                                    .onDisappear {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            isAtBottom = false
-                                        }
-                                    }
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: ScrollBottomOffsetKey.self,
+                                        value: geo.frame(in: .named("chatScrollSpace")).maxY
+                                    )
+                                }
+                                .frame(height: 2)
+                                .id("chatBottomAnchor")
                             }
                             .padding(.vertical, 12)
                         }
-                        .simultaneousGesture(
-                            DragGesture(minimumDistance: 8)
-                                .onChanged { value in
-                                    if value.translation.height > 8 {
-                                        // Пользователь тянет пальцем вниз = прокручивает историю вверх
-                                        userScrolledUp = true
-                                        isAtBottom = false
+                        .coordinateSpace(name: "chatScrollSpace")
+                        .onPreferenceChange(ScrollBottomOffsetKey.self) { bottomY in
+                            let viewportH = geometry.size.height
+                            guard viewportH > 0 else { return }
+                            let dist = bottomY - viewportH
+                            let atBottom = dist < 50
+                            if atBottom != isAtBottom {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isAtBottom = atBottom
+                                    if atBottom {
+                                        userScrolledUp = false
                                     }
                                 }
-                        )
+                            }
+                        }
                         .refreshable {
                             await viewModel.refreshCurrentSessionAsync()
                         }
                         .scrollDismissesKeyboard(.interactively)
                         .onAppear {
                             scrollToBottom(proxy: proxy, animated: false)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                                scrollToBottom(proxy: proxy, animated: false)
-                            }
                         }
                         .onChange(of: viewModel.currentConversationId) { _ in
                             hasInitialScrolled = false
                             userScrolledUp = false
+                            isAtBottom = true
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                 scrollToBottom(proxy: proxy, animated: false)
                             }
@@ -176,12 +164,12 @@ public struct ContentView: View {
                             }
                         }
                         .onChange(of: viewModel.messages.last?.text) { _ in
-                            if isAtBottom && !userScrolledUp {
+                            if isAtBottom {
                                 proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
                             }
                         }
                         .onChange(of: viewModel.messages.last?.toolCalls.count) { _ in
-                            if isAtBottom && !userScrolledUp {
+                            if isAtBottom {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                     proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
                                 }
@@ -193,7 +181,7 @@ public struct ContentView: View {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                     scrollToBottom(proxy: proxy, animated: false)
                                 }
-                            } else if isAtBottom && !userScrolledUp {
+                            } else if isAtBottom {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                     proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
                                 }
@@ -201,10 +189,10 @@ public struct ContentView: View {
                         }
 
                         // Floating "Scroll to Bottom" Button (like ChatGPT & Telegram)
-                        if !isAtBottom || userScrolledUp {
+                        if !isAtBottom {
                             Button {
-                                userScrolledUp = false
                                 isAtBottom = true
+                                userScrolledUp = false
                                 scrollToBottom(proxy: proxy, animated: true)
                                 Haptics.shared.impact(.light)
                             } label: {
@@ -519,43 +507,23 @@ public struct ContentView: View {
         }
 
         // Sliding Side Drawer
+        let safeLeading = geometry.safeAreaInsets.leading
+        let closedOffset = -(drawerWidth + safeLeading + 100)
         let currentX: CGFloat = showSideDrawer
             ? min(0, dragOffset)
-            : -drawerWidth + max(0, dragOffset)
+            : closedOffset + max(0, dragOffset)
 
         SideConversationsDrawer(
             viewModel: viewModel,
-            isOpen: $showSideDrawer
+            isOpen: $showSideDrawer,
+            safeAreaLeading: safeLeading
         )
-        .frame(width: drawerWidth)
+        .frame(width: drawerWidth + safeLeading)
         .offset(x: currentX)
         .shadow(color: Color.black.opacity(showSideDrawer ? 0.35 : 0), radius: 16, x: 6, y: 0)
-
-        // Native left-edge swipe fallback zone
-        if !showSideDrawer {
-            Color.clear
-                .frame(width: 36)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 10, coordinateSpace: .local)
-                        .onChanged { value in
-                            let x = value.translation.width
-                            let y = value.translation.height
-                            if x > 0 && x > abs(y) * 1.1 {
-                                dragOffset = min(drawerWidth, x)
-                            }
-                        }
-                        .onEnded { value in
-                            let velocity = value.predictedEndTranslation.width
-                            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
-                                if dragOffset > 45 || velocity > 100 {
-                                    showSideDrawer = true
-                                }
-                                dragOffset = 0
-                            }
-                        }
-                )
-        }
+        .opacity(showSideDrawer || dragOffset > 0 ? 1 : 0)
+        .allowsHitTesting(showSideDrawer || dragOffset > 0)
+        .ignoresSafeArea()
 
         // Window-level directional pan gesture helper:
         // Works across left ~85% of the screen without conflicting with vertical chat scrolling
@@ -702,5 +670,12 @@ fileprivate extension View {
         } else {
             self
         }
+    }
+}
+
+fileprivate struct ScrollBottomOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
