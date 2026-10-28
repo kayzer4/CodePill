@@ -19,10 +19,25 @@ public struct SettingsView: View {
     @State private var showIslandAlert: Bool = false
     @State private var islandTestResult: String = ""
     @AppStorage("autoStartLiveActivity") private var autoStartLiveActivity: Bool = true
+    @AppStorage("appDesignTheme") private var appDesignTheme: String = "liquidGlass"
 
     public var body: some View {
         NavigationStack {
             Form {
+                Section("Interface Style & Theme") {
+                    Picker("Стиль оформления", selection: $appDesignTheme) {
+                        Text("🔮 Liquid Glass").tag("liquidGlass")
+                        Text("📱 Classic Native").tag("classicNative")
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(appDesignTheme == "liquidGlass"
+                        ? "Современный стиль Liquid Glass с матовым размытием и световыми бликами."
+                        : "Классический нативный стиль Apple без эффектов стекла. Рекомендуется для более старых версий iOS и любителей классики.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Server Connection (Tailscale / LAN)") {
                     TextField("Server IP / Hostname", text: $hostInput)
                         .autocorrectionDisabled()

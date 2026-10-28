@@ -11,6 +11,7 @@ public struct ContentView: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showPhotoPicker: Bool = false
     @State private var showFilePicker: Bool = false
+    @State private var showChatInfo: Bool = false
     @State private var selectedToolDetail: ToolCallItem? = nil
     @State private var isAtBottom: Bool = true
     @State private var userScrolledUp: Bool = false
@@ -326,30 +327,42 @@ public struct ContentView: View {
                 }
 
                 ToolbarItem(placement: .principal) {
-                    VStack(spacing: 2) {
-                        Text(currentConversationTitle)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
+                    Button {
+                        showChatInfo = true
+                        Haptics.shared.selection()
+                    } label: {
+                        VStack(spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text(currentConversationTitle)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
 
-                        HStack(spacing: 5) {
-                            Circle()
-                                .fill(statusIndicatorColor)
-                                .frame(width: 6.5, height: 6.5)
-                                .shadow(color: statusIndicatorColor.opacity(0.85), radius: 4, x: 0, y: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.secondary.opacity(0.6))
+                            }
 
-                            Text(statusIndicatorText)
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(statusIndicatorColor)
+                                    .frame(width: 6.5, height: 6.5)
+                                    .shadow(color: statusIndicatorColor.opacity(0.85), radius: 4, x: 0, y: 0)
 
-                            if viewModel.isSyncing || viewModel.isExecuting {
-                                ProgressView()
-                                    .scaleEffect(0.5)
-                                    .frame(width: 8, height: 8)
+                                Text(statusIndicatorText)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+
+                                if viewModel.isSyncing || viewModel.isExecuting {
+                                    ProgressView()
+                                        .scaleEffect(0.5)
+                                        .frame(width: 8, height: 8)
+                                }
                             }
                         }
                     }
+                    .buttonStyle(.plain)
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -397,6 +410,9 @@ public struct ContentView: View {
         }
         .sheet(item: $selectedToolDetail) { tool in
             ToolDetailSheet(item: tool)
+        }
+        .sheet(isPresented: $showChatInfo) {
+            ChatInfoSheet(viewModel: viewModel)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(
@@ -590,12 +606,9 @@ public struct ContentView: View {
             return "Синхронизация..."
         }
         if viewModel.isExecuting {
-            if let file = viewModel.currentIslandState?.currentFile {
-                return file
-            }
-            return viewModel.currentIslandState?.status ?? "Thinking"
+            return "Работает..."
         }
-        return "Connected"
+        return "В сети"
     }
 
     private var canSend: Bool {

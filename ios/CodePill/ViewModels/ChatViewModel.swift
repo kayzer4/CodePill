@@ -646,9 +646,8 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     public func didReceiveConversationsList(_ list: [ConversationItem]) {
         self.conversations = list
         saveCache()
-        // Если при входе в чат текущий диалог пуст (например новый UUID), а на сервере есть история — синхронизируем последний диалог
-        if !isExplicitNewChat {
-            if allMessages.isEmpty && messages.isEmpty, let first = list.first {
+        if !isExplicitNewChat && allMessages.isEmpty && messages.isEmpty {
+            if let first = list.first {
                 selectConversation(first)
             }
         }
