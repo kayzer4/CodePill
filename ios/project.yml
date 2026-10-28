@@ -19,6 +19,7 @@ targets:
     info:
       path: CodePill/App/Info.plist
       properties:
+        UILaunchScreen: {}
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
         NSLocalNetworkUsageDescription: "CodePill connects to your local Arch Linux server for Antigravity coding."
