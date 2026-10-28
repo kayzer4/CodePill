@@ -421,51 +421,55 @@ public struct ContentView: View {
         .offset(x: currentX)
         .shadow(color: Color.black.opacity(showSideDrawer ? 0.35 : 0), radius: 16, x: 6, y: 0)
 
-        // Left edge swipe detector strip (allows opening drawer over ScrollView and Text)
+        // Left edge swipe detector strip (allows opening drawer comfortably over chat)
         if !showSideDrawer {
             Color.clear
-                .frame(width: 30)
+                .frame(width: 55)
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 10, coordinateSpace: .global)
+                    DragGesture(minimumDistance: 8, coordinateSpace: .global)
                         .onChanged { value in
                             let translation = value.translation.width
                             if translation > 0 {
-                                dragOffset = min(drawerWidth, translation)
+                                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.86, blendDuration: 0.2)) {
+                                    dragOffset = min(drawerWidth, translation)
+                                }
                             }
                         }
                         .onEnded { value in
                             let velocity = value.predictedEndTranslation.width
-                            if dragOffset > 60 || velocity > 150 {
-                                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                                if dragOffset > 50 || velocity > 120 {
                                     showSideDrawer = true
                                 }
+                                dragOffset = 0
                             }
-                            dragOffset = 0
                         }
                 )
         }
     }
     // Drag gesture on open drawer or backdrop to close
     .simultaneousGesture(
-        DragGesture()
+        DragGesture(minimumDistance: 8)
             .onChanged { value in
                 if showSideDrawer {
                     let translation = value.translation.width
                     if translation < 0 {
-                        dragOffset = max(-drawerWidth, translation)
+                        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.86, blendDuration: 0.2)) {
+                            dragOffset = max(-drawerWidth, translation)
+                        }
                     }
                 }
             }
             .onEnded { value in
                 if showSideDrawer {
                     let velocity = value.predictedEndTranslation.width
-                    if dragOffset < -60 || velocity < -150 {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                        if dragOffset < -50 || velocity < -120 {
                             showSideDrawer = false
                         }
+                        dragOffset = 0
                     }
-                    dragOffset = 0
                 }
             }
     )
