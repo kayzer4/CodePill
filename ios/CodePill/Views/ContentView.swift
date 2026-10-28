@@ -477,29 +477,9 @@ public struct ContentView: View {
                 }
             }
         )
-    }
-    .onChange(of: scenePhase) { newPhase in
-        switch newPhase {
-        case .background:
-            if viewModel.isExecuting {
-                backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "CodePillTurnExecution") {
-                    if backgroundTaskId != .invalid {
-                        UIApplication.shared.endBackgroundTask(backgroundTaskId)
-                        backgroundTaskId = .invalid
-                    }
-                }
             }
-        case .active:
-            if backgroundTaskId != .invalid {
-                UIApplication.shared.endBackgroundTask(backgroundTaskId)
-                backgroundTaskId = .invalid
-            }
-            viewModel.handleAppForeground()
-        default:
-            break
         }
     }
-}
 
     private var currentConversationTitle: String {
         if let currentId = viewModel.currentConversationId,
