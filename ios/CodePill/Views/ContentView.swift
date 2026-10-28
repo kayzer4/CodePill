@@ -90,10 +90,7 @@ public struct ContentView: View {
                                         }
                                     )
                                     .id(msg.id)
-                                    .transition(.asymmetric(
-                                        insertion: .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity),
-                                        removal: .opacity
-                                    ))
+                                    .transition(.opacity)
                                 }
 
                                 // Dedicated bottom scroll anchor & viewport detector
@@ -502,7 +499,6 @@ public struct ContentView: View {
             isOpen: showSideDrawer,
             drawerWidth: drawerWidth,
             onPanChanged: { translationX in
-                hideKeyboard()
                 if showSideDrawer {
                     dragOffset = min(0, max(-drawerWidth, translationX))
                 } else {

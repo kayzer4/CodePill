@@ -1,8 +1,7 @@
 import SwiftUI
 
 public struct ThinkingBubbleView: View {
-    @State private var dotScales: [CGFloat] = [0.35, 0.35, 0.35]
-    @State private var dotOpacities: [Double] = [0.4, 0.4, 0.4]
+    @State private var phase: Double = 0.0
 
     public init() {}
 
@@ -10,31 +9,34 @@ public struct ThinkingBubbleView: View {
         HStack(spacing: 5) {
             ForEach(0..<3) { idx in
                 Circle()
-                    .fill(Color.secondary)
-                    .frame(width: 7, height: 7)
-                    .scaleEffect(dotScales[idx])
-                    .opacity(dotOpacities[idx])
+                    .fill(Color.accentColor.opacity(0.85))
+                    .frame(width: 5.5, height: 5.5)
+                    .opacity(dotOpacity(for: idx))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(Color(UIColor.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(Color(UIColor.secondarySystemBackground).opacity(0.7))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.6)
         )
         .onAppear {
-            for i in 0..<3 {
-                withAnimation(
-                    .easeInOut(duration: 0.55)
-                    .repeatForever(autoreverses: true)
-                    .delay(Double(i) * 0.18)
-                ) {
-                    dotScales[i] = 1.05
-                    dotOpacities[i] = 0.95
-                }
+            withAnimation(
+                .easeInOut(duration: 0.9)
+                .repeatForever(autoreverses: true)
+            ) {
+                phase = 1.0
             }
         }
+    }
+
+    private func dotOpacity(for index: Int) -> Double {
+        let offset = Double(index) * 0.3
+        let val = (phase + offset).truncatingRemainder(dividingBy: 1.0)
+        return 0.25 + 0.65 * val
     }
 }

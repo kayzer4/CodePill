@@ -112,6 +112,8 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
             let velocity = recognizer.velocity(in: window)
 
             switch recognizer.state {
+            case .began:
+                window.endEditing(true)
             case .changed:
                 onPanChanged?(translation.x)
             case .ended, .cancelled:

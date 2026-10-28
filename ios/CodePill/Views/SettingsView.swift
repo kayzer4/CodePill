@@ -129,6 +129,102 @@ public struct SettingsView: View {
                     }
                 }
 
+                Section("Лимиты и квоты (Antigravity)") {
+                    if !parsedQuotas.isEmpty {
+                        let families = Array(Set(parsedQuotas.map { $0.modelFamily })).sorted()
+                        ForEach(families, id: \.self) { family in
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: family.contains("Gemini") ? "sparkles" : "brain.head.profile")
+                                        .foregroundStyle(family.contains("Gemini") ? Color.cyan : Color.purple)
+                                        .font(.system(size: 14, weight: .bold))
+
+                                    Text(family)
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(.primary)
+                                }
+                                .padding(.top, 4)
+
+                                ForEach(parsedQuotas.filter { $0.modelFamily == family }) { item in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text(item.periodName)
+                                                .font(.system(size: 13, weight: .medium))
+                                                .foregroundStyle(.secondary)
+
+                                            Spacer()
+
+                                            Text("\(item.percentage)%")
+                                                .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                                                .foregroundStyle(quotaColor(item.percentage))
+                                                .padding(.horizontal, 7)
+                                                .padding(.vertical, 2.5)
+                                                .background(quotaColor(item.percentage).opacity(0.12))
+                                                .clipShape(Capsule())
+                                        }
+
+                                        GeometryReader { geo in
+                                            ZStack(alignment: .leading) {
+                                                Capsule()
+                                                    .fill(Color(UIColor.tertiarySystemFill))
+                                                    .frame(height: 6)
+
+                                                Capsule()
+                                                    .fill(
+                                                        LinearGradient(
+                                                            colors: quotaGradient(item.percentage),
+                                                            startPoint: .leading,
+                                                            endPoint: .trailing
+                                                        )
+                                                    )
+                                                    .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(item.percentage) / 100.0)), height: 6)
+                                            }
+                                        }
+                                        .frame(height: 6)
+
+                                        if !item.resetFormatted.isEmpty {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "clock")
+                                                    .font(.system(size: 10))
+                                                Text(item.resetFormatted)
+                                                    .font(.system(size: 11))
+                                            }
+                                            .foregroundStyle(.secondary)
+                                            .padding(.top, 2)
+                                        }
+                                    }
+                                    .padding(.vertical, 3)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+
+                        Button {
+                            Task {
+                                usageText = (try? await client.fetchUsage()) ?? ""
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Обновить квоты")
+                                    .font(.subheadline)
+                            }
+                        }
+                    } else if !usageText.isEmpty {
+                        Text(usageText)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                    } else {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Загрузка данных квот...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Antigravity Account") {
                     if let account = accountInfo {
                         HStack {
@@ -170,14 +266,6 @@ public struct SettingsView: View {
                     }
                 }
 
-                if !usageText.isEmpty {
-                    Section("Usage & Quotas") {
-                        Text(usageText)
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
                 Section("Dynamic Island & Live Activities") {
                     HStack {
                         Text("iOS Live Activities")
@@ -185,6 +273,17 @@ public struct SettingsView: View {
                         Text(ActivityAuthorizationInfo().areActivitiesEnabled ? "Allowed" : "Disabled in iOS")
                             .font(.caption.bold())
                             .foregroundStyle(ActivityAuthorizationInfo().areActivitiesEnabled ? Color.green : Color.orange)
+                    }
+
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "gear")
+                            Text("Открыть настройки iOS")
+                        }
                     }
 
                     Button {
@@ -200,7 +299,7 @@ public struct SettingsView: View {
                         }
                     }
 
-                    Text("If Dynamic Island does not show, verify that Live Activities are toggled on in iOS Settings -> CodePill -> Live Activities.")
+                    Text("Для работы островка на iPhone:\n1. Настройки iOS -> CodePill -> Эфир активности -> Включено.\n2. Настройки iOS -> Face ID и код-пароль -> Эфир активности -> Включено.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -240,5 +339,87 @@ public struct SettingsView: View {
         }
 
         isLoading = false
+    }
+
+    private struct QuotaLimitItem: Identifiable {
+        let id = UUID()
+        let modelFamily: String
+        let periodName: String
+        let rawPeriod: String
+        let percentage: Int
+        let resetFormatted: String
+    }
+
+    private var parsedQuotas: [QuotaLimitItem] {
+        var list: [QuotaLimitItem] = []
+        let lines = usageText.components(separatedBy: "\n")
+        for line in lines {
+            let parts = line.components(separatedBy: "\t")
+            if parts.count >= 3 {
+                let family = parts[0].trimmingCharacters(in: .whitespaces)
+                let rawPeriod = parts[1].trimmingCharacters(in: .whitespaces)
+                let pctStr = parts[2].replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)
+                let pct = Int(pctStr) ?? 100
+                let dateStr = parts.count > 3 ? parts[3].trimmingCharacters(in: .whitespaces) : ""
+
+                let displayName: String
+                if rawPeriod.localizedCaseInsensitiveContains("Five Hour") {
+                    displayName = "5-часовой лимит"
+                } else if rawPeriod.localizedCaseInsensitiveContains("Weekly") {
+                    displayName = "Недельный лимит"
+                } else {
+                    displayName = rawPeriod.replacingOccurrences(of: "Remaining", with: "").trimmingCharacters(in: .whitespaces)
+                }
+
+                list.append(QuotaLimitItem(
+                    modelFamily: family,
+                    periodName: displayName,
+                    rawPeriod: rawPeriod,
+                    percentage: pct,
+                    resetFormatted: formatResetDate(dateStr)
+                ))
+            }
+        }
+        return list
+    }
+
+    private func quotaColor(_ pct: Int) -> Color {
+        if pct >= 50 { return .green }
+        if pct >= 20 { return .orange }
+        return .red
+    }
+
+    private func quotaGradient(_ pct: Int) -> [Color] {
+        if pct >= 50 { return [.green, .mint] }
+        if pct >= 20 { return [.orange, .yellow] }
+        return [.red, .pink]
+    }
+
+    private func formatResetDate(_ dateStr: String) -> String {
+        guard !dateStr.isEmpty else { return "" }
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: dateStr) else { return dateStr }
+
+        let now = Date()
+        let diff = date.timeIntervalSince(now)
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+
+        if Calendar.current.isDateInToday(date) {
+            if diff > 0 {
+                let h = Int(diff) / 3600
+                let m = (Int(diff) % 3600) / 60
+                return "Сброс сегодня в \(timeFormatter.string(from: date)) (через \(h)ч \(m)м)"
+            }
+            return "Сброс сегодня в \(timeFormatter.string(from: date))"
+        } else if Calendar.current.isDateInTomorrow(date) {
+            return "Сброс завтра в \(timeFormatter.string(from: date))"
+        } else {
+            let df = DateFormatter()
+            df.dateFormat = "d MMM, HH:mm"
+            df.locale = Locale(identifier: "ru_RU")
+            return "Сброс: \(df.string(from: date))"
+        }
     }
 }
