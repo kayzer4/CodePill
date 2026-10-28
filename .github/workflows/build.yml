@@ -38,7 +38,15 @@ jobs:
           fi
 
       - name: Select Xcode version
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+        run: |
+          for xc in /Applications/Xcode_16*.app /Applications/Xcode_15*.app /Applications/Xcode.app; do
+            if [ -d "$xc" ]; then
+              echo "Selecting $xc"
+              sudo xcode-select -s "$xc/Contents/Developer"
+              break
+            fi
+          done
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
