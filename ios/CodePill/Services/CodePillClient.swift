@@ -570,12 +570,6 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         let auth = ActivityAuthorizationInfo()
         print("[CodePill] Live Activities enabled check: \(auth.areActivitiesEnabled)")
 
-        guard auth.areActivitiesEnabled else {
-            let msg = "Live Activities (Эфир активности) отключены в iOS для CodePill.\n\nОткройте Настройки iOS -> CodePill -> включите тумблер 'Эфир активности' (Live Activities)."
-            print("[CodePill] \(msg)")
-            return (false, msg)
-        }
-
         // Clean up any old activities so we don't hit iOS per-app limit
         for old in Activity<CodePillAttributes>.activities {
             Task {
@@ -607,10 +601,13 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         } catch {
             print("[CodePill] LiveActivity start failed: \(error)")
             let desc = error.localizedDescription
-            if desc.contains("NSSupportsLiveActivities") || desc.contains("Target does not include") {
-                return (false, "Ошибка iOS: Live Activities не разрешены профилем подписи или отключены в системе.\n\nПроверьте:\n1. Настройки iOS -> CodePill -> Эфир активности (Live Activities).\n2. Настройки iOS -> Face ID и код-пароль -> Эфир активности -> Включено.")
+            if !auth.areActivitiesEnabled {
+                return (false, "Live Activities (Эфир активности) отключены в iOS.\n\n1. Настройки iOS -> Face ID и код-пароль -> Эфир активности (включите).\n2. Настройки iOS -> CodePill -> Эфир активности.\n(Если в настройках CodePill пусто — переустановите приложение из обновленного IPA).")
             }
-            return (false, error.localizedDescription)
+            if desc.contains("NSSupportsLiveActivities") || desc.contains("Target does not include") {
+                return (false, "Ошибка iOS: Live Activities не разрешены профилем подписи или отключены в системе.\n\nПроверьте:\n1. Настройки iOS -> CodePill -> Эфир активности.\n2. Настройки iOS -> Face ID и код-пароль -> Эфир активности.")
+            }
+            return (false, "Ошибка запуска Live Activity: \(desc)")
         }
     }
 
