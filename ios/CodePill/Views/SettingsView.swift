@@ -18,6 +18,7 @@ public struct SettingsView: View {
     @State private var isLoading: Bool = false
     @State private var showIslandAlert: Bool = false
     @State private var islandTestResult: String = ""
+    @AppStorage("autoStartLiveActivity") private var autoStartLiveActivity: Bool = true
 
     public var body: some View {
         NavigationStack {
@@ -267,6 +268,17 @@ public struct SettingsView: View {
                 }
 
                 Section("Dynamic Island & Live Activities") {
+                    Toggle(isOn: $autoStartLiveActivity) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Автозапуск Live Activity")
+                                .font(.body)
+                            Text("Автоматически стартовать Dynamic Island при отправке сообщения")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(Color.accentColor)
+
                     HStack {
                         Text("iOS Live Activities")
                         Spacer()

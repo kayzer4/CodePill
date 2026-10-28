@@ -302,7 +302,10 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
         ]
 
         sendJson(envelope)
-        startDynamicIsland(prompt: text, projectName: projectName)
+        let shouldAutoStart = UserDefaults.standard.object(forKey: "autoStartLiveActivity") as? Bool ?? true
+        if shouldAutoStart {
+            startDynamicIsland(prompt: text, projectName: projectName)
+        }
     }
 
     public func sendSync(conversationId: String) {

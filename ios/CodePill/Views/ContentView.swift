@@ -155,9 +155,6 @@ public struct ContentView: View {
                             await viewModel.refreshCurrentSessionAsync()
                         }
                         .scrollDismissesKeyboard(.interactively)
-                        .onTapGesture {
-                            hideKeyboard()
-                        }
                         .onAppear {
                             scrollToBottom(proxy: proxy, animated: false)
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {

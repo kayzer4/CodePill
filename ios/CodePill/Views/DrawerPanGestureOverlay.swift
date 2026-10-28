@@ -48,11 +48,32 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
         var onPanEnded: ((CGFloat, CGFloat) -> Void)?
 
         private var panRecognizer: UIPanGestureRecognizer?
+        private var keyboardHeight: CGFloat = 0
+        private var keyboardShowObserver: Any?
+        private var keyboardHideObserver: Any?
 
         override init(frame: CGRect) {
             super.init(frame: frame)
             backgroundColor = .clear
             isUserInteractionEnabled = false // Pass all touches to views below
+
+            keyboardShowObserver = NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillShowNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notif in
+                if let frame = notif.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                    self?.keyboardHeight = frame.height
+                }
+            }
+
+            keyboardHideObserver = NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillHideNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.keyboardHeight = 0
+            }
         }
 
         required init?(coder: NSCoder) {
@@ -65,7 +86,7 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
                 if panRecognizer == nil {
                     let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
                     pan.delegate = self
-                    pan.cancelsTouchesInView = true
+                    pan.cancelsTouchesInView = false
                     window.addGestureRecognizer(pan)
                     self.panRecognizer = pan
                 }
@@ -81,6 +102,12 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
             if let pan = panRecognizer {
                 pan.view?.removeGestureRecognizer(pan)
             }
+            if let obs = keyboardShowObserver {
+                NotificationCenter.default.removeObserver(obs)
+            }
+            if let obs = keyboardHideObserver {
+                NotificationCenter.default.removeObserver(obs)
+            }
         }
 
         public override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -89,8 +116,9 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
 
             let location = pan.location(in: window)
 
-            // 1. NEVER intercept touches in bottom input bar area (bottom 115pt of screen)
-            if location.y > window.bounds.height - 115 {
+            // 1. NEVER intercept touches in bottom input bar area or anywhere over/near keyboard
+            let bottomCutoff: CGFloat = keyboardHeight > 0 ? (keyboardHeight + 75) : 110
+            if location.y > window.bounds.height - bottomCutoff {
                 return false
             }
 
@@ -101,7 +129,7 @@ public struct WindowDrawerPanHelper: UIViewRepresentable {
                     return false
                 }
                 let className = NSStringFromClass(type(of: hitView))
-                if className.contains("Text") || className.contains("Selection") || className.contains("Range") || className.contains("Loupe") {
+                if className.contains("Text") || className.contains("Selection") || className.contains("Range") || className.contains("Loupe") || className.contains("Keyboard") {
                     return false
                 }
             }
