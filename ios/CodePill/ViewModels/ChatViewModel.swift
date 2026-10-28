@@ -320,11 +320,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
         Haptics.shared.impact(.light)
 
-        let assistantMsg = ChatMessage(role: .assistant, text: "")
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-            messages.append(assistantMsg)
-        }
-        currentAssistantMessageId = assistantMsg.id
+        currentAssistantMessageId = nil
 
         client.sendPrompt(
             trimmed,
@@ -355,14 +351,17 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     }
 
     public func didReceiveTokenChunk(_ chunk: String) {
-        guard let id = currentAssistantMessageId,
-              let idx = messages.firstIndex(where: { $0.id == id }) else {
-            if let lastIdx = messages.indices.last, messages[lastIdx].role == .assistant {
-                messages[lastIdx].text += chunk
-            }
-            return
+        if let id = currentAssistantMessageId,
+           let idx = messages.firstIndex(where: { $0.id == id }) {
+            messages[idx].text += chunk
+        } else if let lastIdx = messages.indices.last, messages[lastIdx].role == .assistant {
+            messages[lastIdx].text += chunk
+            currentAssistantMessageId = messages[lastIdx].id
+        } else {
+            let msg = ChatMessage(role: .assistant, text: chunk)
+            messages.append(msg)
+            currentAssistantMessageId = msg.id
         }
-        messages[idx].text += chunk
     }
 
     public func didUpdateIsland(state: CodePillAttributes.ContentState) {
@@ -380,7 +379,15 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             isRunning: true
         )
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-            if let id = currentAssistantMessageId, let idx = messages.firstIndex(where: { $0.id == id }) {
+            // Если последнее сообщение ассистента УЖЕ содержит текст,
+            // значит этот тул вызывается ПОСЛЕ текста — создаём новый блок сообщения!
+            if let lastIdx = messages.indices.last,
+               messages[lastIdx].role == .assistant,
+               !messages[lastIdx].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let newMsg = ChatMessage(role: .assistant, text: "", toolCalls: [item])
+                messages.append(newMsg)
+                currentAssistantMessageId = newMsg.id
+            } else if let id = currentAssistantMessageId, let idx = messages.firstIndex(where: { $0.id == id }) {
                 messages[idx].toolCalls.append(item)
             } else if let lastIdx = messages.indices.last, messages[lastIdx].role == .assistant {
                 messages[lastIdx].toolCalls.append(item)

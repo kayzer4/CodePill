@@ -431,7 +431,6 @@ public struct ContentView: View {
         )
         .frame(width: drawerWidth)
         .offset(x: currentX)
-        .ignoresSafeArea(edges: .vertical)
         .shadow(color: Color.black.opacity(showSideDrawer ? 0.35 : 0), radius: 16, x: 6, y: 0)
     }
     // Edge drag gesture to open / close drawer
