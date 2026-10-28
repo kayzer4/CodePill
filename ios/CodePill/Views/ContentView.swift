@@ -610,7 +610,7 @@ public struct ContentView: View {
     }
 
     private var strictInputBar: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .bottom, spacing: 8) {
             // Attachment menu
             Menu {
                 Button {
@@ -629,13 +629,14 @@ public struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 32, height: 32)
             }
-            .padding(.leading, 6)
+            .padding(.bottom, 2)
 
             TextField("Message or instruction...", text: $viewModel.inputText, axis: .vertical)
+                .font(.system(size: 16))
                 .lineLimit(1...5)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 9)
+                .tint(Color.accentColor)
                 .foregroundStyle(.primary)
+                .padding(.vertical, 5)
 
             ChatInputActionButton(
                 isExecuting: viewModel.isExecuting,
@@ -643,8 +644,10 @@ public struct ContentView: View {
                 onSend: { viewModel.sendMessage() },
                 onCancel: { viewModel.cancelTurn() }
             )
-            .padding(.trailing, 6)
+            .padding(.bottom, 1)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
         .liquidGlass(cornerRadius: 22, specularOpacity: 0.28)
     }
 

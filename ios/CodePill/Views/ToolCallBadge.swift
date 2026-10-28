@@ -13,7 +13,7 @@ public struct ToolCallBadge: View {
                 // Tool specific icon
                 Image(systemName: iconForTool(item.name))
                     .font(.caption2)
-                    .foregroundStyle(item.isRunning ? .orange : (item.isSuccess ? .green : .red))
+                    .foregroundStyle(iconColor)
 
                 Text(item.summary)
                     .font(.caption.monospaced())
@@ -22,7 +22,20 @@ public struct ToolCallBadge: View {
 
                 Spacer()
 
-                if item.isRunning {
+                if item.name == "schedule" && item.isRunning {
+                    HStack(spacing: 4) {
+                        Image(systemName: "hourglass")
+                            .font(.caption2)
+                            .foregroundStyle(Color.purple)
+                        Text("Waiting")
+                            .font(.caption2.bold().monospaced())
+                            .foregroundStyle(Color.purple)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.purple.opacity(0.15))
+                    .clipShape(Capsule())
+                } else if item.isRunning {
                     ProgressView()
                         .progressViewStyle(.circular)
                         .scaleEffect(0.6)
@@ -46,11 +59,20 @@ public struct ToolCallBadge: View {
         }
     }
 
+    private var iconColor: Color {
+        if item.name == "schedule" {
+            return Color.purple
+        }
+        return item.isRunning ? .orange : (item.isSuccess ? .green : .red)
+    }
+
     private func iconForTool(_ name: String) -> String {
         switch name {
+        case "schedule": return "clock.badge.checkmark"
+        case "manage_task": return "list.bullet.rectangle"
         case "run_command": return "terminal.fill"
-        case "write_to_file", "replace_file_content": return "pencil.and.outline"
-        case "view_file": return "eye.fill"
+        case "write_file", "edit_file", "write_to_file", "replace_file_content": return "pencil.and.outline"
+        case "read_file", "view_file": return "eye.fill"
         case "search_web": return "globe"
         default: return "gearshape.fill"
         }

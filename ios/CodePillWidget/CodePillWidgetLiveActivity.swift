@@ -123,6 +123,9 @@ public struct CodePillWidgetLiveActivity: Widget {
 
     private func toolIcon(status: String, desc: String) -> String {
         let lower = (status + " " + desc).lowercased()
+        if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
+            return "clock.badge.checkmark"
+        }
         if lower.contains("run") || lower.contains("command") || lower.contains("bash") || lower.contains("terminal") {
             return "terminal.fill"
         }
@@ -140,6 +143,9 @@ public struct CodePillWidgetLiveActivity: Widget {
 
     private func toolHeading(status: String, desc: String) -> String {
         let lower = (status + " " + desc).lowercased()
+        if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
+            return "Timer"
+        }
         if lower.contains("run") || lower.contains("command") || lower.contains("bash") {
             return "Terminal"
         }
@@ -158,6 +164,24 @@ public struct CodePillWidgetLiveActivity: Widget {
     private func compactTrailingLabel(_ state: CodePillAttributes.ContentState) -> String {
         if !state.isBusy {
             return "Done"
+        }
+        let lower = (state.status + " " + state.stepDescription).lowercased()
+        if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
+            if let start = lower.range(of: "waiting ")?.upperBound,
+               let end = lower[start...].range(of: "s")?.lowerBound {
+                let secs = lower[start..<end].trimmingCharacters(in: .whitespaces)
+                if !secs.isEmpty {
+                    return "\(secs)s"
+                }
+            }
+            if let start = lower.range(of: "(")?.upperBound,
+               let end = lower[start...].range(of: ")")?.lowerBound {
+                let secs = lower[start..<end].trimmingCharacters(in: .whitespaces)
+                if !secs.isEmpty {
+                    return secs
+                }
+            }
+            return "Timer"
         }
         if let file = state.currentFile, !file.isEmpty {
             let last = file.split(separator: "/").last.map(String.init) ?? file

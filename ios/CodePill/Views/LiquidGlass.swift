@@ -43,6 +43,7 @@ public struct LiquidGlassModifier: ViewModifier {
                         ),
                         lineWidth: isHighlighted ? 1.2 : 0.8
                     )
+                    .allowsHitTesting(false)
             )
             .shadow(
                 color: isHighlighted ? Color.accentColor.opacity(0.25) : Color.black.opacity(0.22),

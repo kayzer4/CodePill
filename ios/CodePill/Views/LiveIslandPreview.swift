@@ -127,6 +127,10 @@ public struct LiveIslandPreview: View {
         if state.needsApproval {
             return "CONFIRM"
         }
+        let lower = (state.status + " " + state.stepDescription).lowercased()
+        if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
+            return "TIMER"
+        }
         if state.isBusy {
             return "ACTIVE"
         }
@@ -135,6 +139,9 @@ public struct LiveIslandPreview: View {
 
     private var toolThemeColor: Color {
         let lower = (state.status + " " + state.stepDescription).lowercased()
+        if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
+            return Color.purple
+        }
         if lower.contains("run") || lower.contains("command") || lower.contains("bash") || lower.contains("terminal") {
             return Color.green
         }
@@ -155,6 +162,9 @@ public struct LiveIslandPreview: View {
 
     private var iconName: String {
         let lower = (state.status + " " + state.stepDescription).lowercased()
+        if lower.contains("schedule") || lower.contains("timer") || lower.contains("wait") {
+            return "clock.badge.checkmark"
+        }
         if lower.contains("run") || lower.contains("command") || lower.contains("bash") || lower.contains("terminal") {
             return "terminal.fill"
         }

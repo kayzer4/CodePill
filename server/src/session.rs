@@ -152,6 +152,14 @@ impl SessionManager {
                                     format!("Run: {}", truncate(cmd.trim_matches('"'), 30))
                                 } else if let Some(p) = a.get("Path").and_then(|p| p.as_str()) {
                                     format!("File: {}", truncate(p.trim_matches('"'), 30))
+                                } else if name == "schedule" {
+                                    if let Some(secs) = a.get("DurationSeconds").and_then(|d| d.as_u64()) {
+                                        format!("Schedule timer ({}s)", secs)
+                                    } else if let Some(cron) = a.get("CronExpression").and_then(|c| c.as_str()) {
+                                        format!("Schedule cron: {}", cron)
+                                    } else {
+                                        "Schedule timer".to_string()
+                                    }
                                 } else {
                                     name.clone()
                                 }
@@ -699,26 +707,38 @@ impl SessionManager {
 
             if let Some(secs) = sched_secs {
                 info!("Active schedule detected ({}s) for [{}]. Waiting for timer...", secs, conv_id);
-                let sched_island = DynamicIslandState {
-                    status: "Waiting".to_string(),
-                    current_file: None,
-                    step_description: format!("Schedule timer ({}s)", secs),
-                    is_busy: true,
-                    needs_approval: false,
-                };
-                {
-                    let mut convs = self.conversations.write().await;
-                    if let Some(c) = convs.get_mut(&conv_id) {
-                        c.current_island_state = Some(sched_island.clone());
-                    }
-                }
-                let _ = self.broadcast_tx.send((conv_id.clone(), ServerMessage::IslandUpdate(sched_island)));
-
-                // Wait up to secs + 4 seconds for schedule timer to fire
-                let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(secs + 4);
+                let start_time = tokio::time::Instant::now();
+                let deadline = start_time + tokio::time::Duration::from_secs(secs + 4);
                 let mut message_arrived = false;
+                let mut last_remaining: Option<u64> = None;
+
                 while tokio::time::Instant::now() < deadline {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+                    let elapsed = start_time.elapsed().as_secs();
+                    let remaining = secs.saturating_sub(elapsed);
+
+                    if last_remaining != Some(remaining) {
+                        last_remaining = Some(remaining);
+                        let sched_island = DynamicIslandState {
+                            status: "Waiting".to_string(),
+                            current_file: None,
+                            step_description: if remaining > 0 {
+                                format!("⏳ Timer: waiting {}s...", remaining)
+                            } else {
+                                "⏳ Timer firing...".to_string()
+                            },
+                            is_busy: true,
+                            needs_approval: false,
+                        };
+                        {
+                            let mut convs = self.conversations.write().await;
+                            if let Some(c) = convs.get_mut(&conv_id) {
+                                c.current_island_state = Some(sched_island.clone());
+                            }
+                        }
+                        let _ = self.broadcast_tx.send((conv_id.clone(), ServerMessage::IslandUpdate(sched_island)));
+                    }
+
+                    tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
                     if Self::check_undelivered_messages(&conv_id).await > 0 {
                         message_arrived = true;
                         break;
@@ -899,6 +919,20 @@ impl SessionManager {
                                         format!("Reading {}", path)
                                     }
                                     "search_web" => "Searching web".to_string(),
+                                    "schedule" => {
+                                        if let Some(secs) = tool_info
+                                            .and_then(|i| i.pointer("/parameters/DurationSeconds"))
+                                            .and_then(|s| s.as_u64()) {
+                                            format!("Schedule timer ({}s)", secs)
+                                        } else if let Some(cron) = tool_info
+                                            .and_then(|i| i.pointer("/parameters/CronExpression"))
+                                            .and_then(|c| c.as_str()) {
+                                            format!("Schedule cron: {}", cron)
+                                        } else {
+                                            "Setting schedule".to_string()
+                                        }
+                                    }
+                                    "manage_task" => "Managing tasks".to_string(),
                                     other => format!("Tool: {}", other),
                                 };
 
@@ -909,7 +943,11 @@ impl SessionManager {
                                     .map(String::from);
 
                                 let island_state = DynamicIslandState {
-                                    status: "Running tool".to_string(),
+                                    status: if tool_name == "schedule" {
+                                        "Waiting".to_string()
+                                    } else {
+                                        "Running tool".to_string()
+                                    },
                                     current_file: file_name,
                                     step_description: desc.clone(),
                                     is_busy: true,
