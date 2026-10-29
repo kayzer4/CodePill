@@ -23,6 +23,7 @@ pub struct ConversationState {
     pub is_busy: bool,
     pub current_island_state: Option<DynamicIslandState>,
     pub updated_at: String,
+    pub workspace: Option<String>,
 }
 
 pub struct SessionManager {
@@ -61,41 +62,219 @@ impl SessionManager {
         self.broadcast_tx.subscribe()
     }
 
-    async fn fetch_antigravity_summaries() -> Vec<ConversationSummary> {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
-        let db_path = format!("{}/.gemini/antigravity-cli/conversation_summaries.db", home);
-        if !std::path::Path::new(&db_path).exists() {
-            return Vec::new();
+    pub fn extract_workspace_info(workspace_uris: Option<&str>) -> (Option<String>, Option<String>) {
+        let Some(raw) = workspace_uris else {
+            return (None, None);
+        };
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return (None, None);
         }
 
-        let cmd = tokio::process::Command::new("sqlite3")
-            .arg(&db_path)
-            .arg("-json")
-            .arg("SELECT conversation_id, title, step_count, last_modified_time FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 60;")
-            .output()
-            .await;
+        if let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) {
+            if let Some(first) = arr.first() {
+                let clean = first.trim_start_matches("file://").trim_end_matches('/');
+                let name = std::path::Path::new(clean)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string());
+                return (name, Some(clean.to_string()));
+            }
+        } else {
+            let clean = raw.trim_matches('"').trim_start_matches("file://").trim_end_matches('/');
+            let name = std::path::Path::new(clean)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string());
+            return (name, Some(clean.to_string()));
+        }
+        (None, None)
+    }
 
-        if let Ok(out) = cmd {
-            if out.status.success() {
-                if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
-                    if let Some(arr) = val.as_array() {
-                        return arr.iter().filter_map(|item| {
-                            let id = item.get("conversation_id")?.as_str()?.to_string();
-                            let title = item.get("title")?.as_str().unwrap_or("Session").to_string();
-                            let steps = item.get("step_count")?.as_u64().unwrap_or(0) as usize;
-                            let updated = item.get("last_modified_time")?.as_str().unwrap_or("").to_string();
-                            Some(ConversationSummary {
-                                id,
-                                title: if title.is_empty() { "Session".to_string() } else { title },
-                                updated_at: updated,
-                                message_count: steps,
-                            })
-                        }).collect();
+    async fn get_first_user_prompt(home: &str, conv_id: &str) -> Option<String> {
+        let path = format!(
+            "{}/.gemini/antigravity-cli/brain/{}/.system_generated/logs/transcript.jsonl",
+            home, conv_id
+        );
+        let file = tokio::fs::File::open(&path).await.ok()?;
+
+        use tokio::io::AsyncBufReadExt;
+        let mut reader = tokio::io::BufReader::new(file).lines();
+        let mut count = 0;
+        while let Ok(Some(line)) = reader.next_line().await {
+            count += 1;
+            if count > 40 {
+                break;
+            }
+            if line.contains("\"USER_INPUT\"") {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+                    if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                        let clean = if let Some(start) = content.find("<USER_REQUEST>") {
+                            let after = &content[start + 14..];
+                            if let Some(end) = after.find("</USER_REQUEST>") {
+                                after[..end].trim()
+                            } else {
+                                content.trim()
+                            }
+                        } else {
+                            content.trim()
+                        };
+                        let single_line = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+                        if !single_line.is_empty() {
+                            return Some(truncate(&single_line, 45));
+                        }
                     }
                 }
             }
         }
-        Vec::new()
+        None
+    }
+
+    pub async fn get_conversation_workspace(&self, conv_id: &str) -> Option<String> {
+        // 1. Check in-memory conversation state
+        {
+            let convs = self.conversations.read().await;
+            if let Some(c) = convs.get(conv_id) {
+                if let Some(ref ws) = c.workspace {
+                    if std::path::Path::new(ws).exists() {
+                        return Some(ws.clone());
+                    }
+                }
+            }
+        }
+
+        // 2. Query conversation_summaries.db
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+        let db_path = format!("{}/.gemini/antigravity-cli/conversation_summaries.db", home);
+        if std::path::Path::new(&db_path).exists() {
+            let sql = format!(
+                "SELECT workspace_uris FROM conversation_summaries WHERE conversation_id = '{}' LIMIT 1;",
+                conv_id.replace('\'', "")
+            );
+            let cmd = tokio::process::Command::new("sqlite3")
+                .arg(&db_path)
+                .arg(&sql)
+                .output()
+                .await;
+            if let Ok(out) = cmd {
+                if out.status.success() {
+                    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    let (_, ws_path) = Self::extract_workspace_info(Some(&text));
+                    if let Some(path) = ws_path {
+                        if std::path::Path::new(&path).exists() {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    async fn fetch_antigravity_summaries() -> Vec<ConversationSummary> {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/kayzer".to_string());
+        let db_path = format!("{}/.gemini/antigravity-cli/conversation_summaries.db", home);
+        let mut summaries = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
+
+        if std::path::Path::new(&db_path).exists() {
+            let cmd = tokio::process::Command::new("sqlite3")
+                .arg(&db_path)
+                .arg("-json")
+                .arg("SELECT conversation_id, title, preview, step_count, last_modified_time, workspace_uris FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 1000;")
+                .output()
+                .await;
+
+            if let Ok(out) = cmd {
+                if out.status.success() {
+                    if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
+                        if let Some(arr) = val.as_array() {
+                            for item in arr {
+                                let Some(id) = item.get("conversation_id").and_then(|v| v.as_str()).map(String::from) else {
+                                    continue;
+                                };
+                                seen_ids.insert(id.clone());
+
+                                let raw_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                                let preview = item.get("preview").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                                let steps = item.get("step_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                let updated = item.get("last_modified_time").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let w_uris = item.get("workspace_uris").and_then(|v| v.as_str());
+                                let (ws_name, _ws_path) = Self::extract_workspace_info(w_uris);
+
+                                let mut title = raw_title;
+                                if title.is_empty() || title == "Session" {
+                                    if !preview.is_empty() {
+                                        title = preview;
+                                    } else if let Some(p) = Self::get_first_user_prompt(&home, &id).await {
+                                        title = if let Some(ref ws) = ws_name {
+                                            format!("{}: {}", ws, p)
+                                        } else {
+                                            p
+                                        };
+                                    } else if let Some(ref ws) = ws_name {
+                                        title = format!("{} Session", ws);
+                                    } else {
+                                        let short_id = if id.len() >= 8 { &id[..8] } else { &id };
+                                        title = format!("Session {}", short_id);
+                                    }
+                                }
+
+                                summaries.push(ConversationSummary {
+                                    id,
+                                    title,
+                                    updated_at: updated,
+                                    message_count: steps,
+                                    workspace: ws_name,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also scan ~/.gemini/antigravity-cli/brain/*/ for any conversations on device not in DB
+        let brain_dir = format!("{}/.gemini/antigravity-cli/brain", home);
+        if let Ok(mut entries) = tokio::fs::read_dir(&brain_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let Ok(file_type) = entry.file_type().await else { continue; };
+                if !file_type.is_dir() { continue; }
+                let id = entry.file_name().to_string_lossy().to_string();
+                if seen_ids.contains(&id) {
+                    continue;
+                }
+
+                let t_path = entry.path().join(".system_generated/logs/transcript.jsonl");
+                if !t_path.exists() {
+                    continue;
+                }
+
+                seen_ids.insert(id.clone());
+
+                let prompt_opt = Self::get_first_user_prompt(&home, &id).await;
+                let short_id = if id.len() >= 8 { &id[..8] } else { &id };
+                let title = prompt_opt.unwrap_or_else(|| format!("Session {}", short_id));
+
+                let updated = entry
+                    .metadata()
+                    .await
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|sys_time| {
+                        sys_time.duration_since(std::time::UNIX_EPOCH).ok().map(|d| format!("{}", d.as_secs()))
+                    })
+                    .unwrap_or_else(chrono_or_simple_time);
+
+                summaries.push(ConversationSummary {
+                    id,
+                    title,
+                    updated_at: updated,
+                    message_count: 0,
+                    workspace: None,
+                });
+            }
+        }
+
+        summaries
     }
 
     async fn load_antigravity_transcript(conv_id: &str) -> Vec<StoredMessage> {
@@ -262,6 +441,8 @@ impl SessionManager {
         // 2. Overlay active in-memory conversations
         let convs = self.conversations.read().await;
         for c in convs.values() {
+            let existing = map.get(&c.id);
+            let ws = c.workspace.clone().or_else(|| existing.and_then(|e| e.workspace.clone()));
             map.insert(
                 c.id.clone(),
                 ConversationSummary {
@@ -269,10 +450,11 @@ impl SessionManager {
                     title: c.title.clone(),
                     updated_at: c.updated_at.clone(),
                     message_count: if c.messages.is_empty() {
-                        map.get(&c.id).map(|existing| existing.message_count).unwrap_or(0)
+                        existing.map(|e| e.message_count).unwrap_or(0)
                     } else {
                         c.messages.len()
                     },
+                    workspace: ws,
                 },
             );
         }
@@ -284,11 +466,15 @@ impl SessionManager {
 
     pub async fn get_conversation(&self, id: &str) -> Option<ConversationState> {
         let msgs = Self::load_antigravity_transcript(id).await;
+        let ws = self.get_conversation_workspace(id).await;
 
         let mut convs = self.conversations.write().await;
         if let Some(c) = convs.get_mut(id) {
             if !msgs.is_empty() && (!c.is_busy || c.messages.is_empty()) {
                 c.messages = msgs;
+            }
+            if c.workspace.is_none() && ws.is_some() {
+                c.workspace = ws;
             }
             return Some(c.clone());
         }
@@ -301,6 +487,7 @@ impl SessionManager {
                 updated_at: chrono_or_simple_time(),
                 is_busy: false,
                 current_island_state: None,
+                workspace: ws,
             });
             conv.messages = msgs;
             return Some(conv.clone());
@@ -519,10 +706,18 @@ impl SessionManager {
         workspace_override: Option<&str>,
         model_override: Option<&str>,
     ) -> Result<String> {
-        let cwd = workspace_override.unwrap_or(&self.workspace);
         let conv_id = conversation_id
             .map(String::from)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+        let resolved_ws = match workspace_override {
+            Some(w) => w.to_string(),
+            None => {
+                let conv_ws = self.get_conversation_workspace(&conv_id).await;
+                conv_ws.unwrap_or_else(|| self.workspace.clone())
+            }
+        };
+        let cwd = &resolved_ws;
 
         let now_str = chrono_or_simple_time();
 
@@ -558,10 +753,14 @@ impl SessionManager {
                 is_busy: true,
                 current_island_state: None,
                 updated_at: now_str.clone(),
+                workspace: Some(resolved_ws.clone()),
             });
 
             conv.is_busy = true;
             conv.updated_at = now_str.clone();
+            if conv.workspace.is_none() {
+                conv.workspace = Some(resolved_ws.clone());
+            }
 
             // Append User Message
             conv.messages.push(StoredMessage {
@@ -1155,4 +1354,25 @@ fn chrono_or_simple_time() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}", duration.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_summaries_includes_eschools() {
+        let summaries = SessionManager::fetch_antigravity_summaries().await;
+        println!("Fetched {} summaries", summaries.len());
+        assert!(!summaries.is_empty(), "Summaries should not be empty");
+        let eschools: Vec<_> = summaries.iter().filter(|s| {
+            s.title.to_lowercase().contains("school") ||
+            s.workspace.as_deref().unwrap_or("").to_lowercase().contains("school")
+        }).collect();
+        println!("Total eschools conversations: {}", eschools.len());
+        for e in &eschools {
+            println!(" - Found: id={}, title={}, workspace={:?}", e.id, e.title, e.workspace);
+        }
+        assert_eq!(eschools.len(), 3, "Expected 3 eschools conversations");
+    }
 }

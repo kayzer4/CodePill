@@ -559,7 +559,8 @@ public final class CodePillClient: NSObject, ObservableObject, URLSessionWebSock
                           let title = c["title"] as? String else { return nil }
                     let updated = c["updated_at"] as? String ?? ""
                     let count = c["message_count"] as? Int ?? 0
-                    return ConversationItem(id: id, title: title, updated_at: updated, message_count: count)
+                    let workspace = c["workspace"] as? String
+                    return ConversationItem(id: id, title: title, updated_at: updated, message_count: count, workspace: workspace)
                 }
                 delegate?.didReceiveConversationsList(items)
             }

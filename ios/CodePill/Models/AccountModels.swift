@@ -21,6 +21,15 @@ public struct ConversationItem: Identifiable, Codable, Hashable {
     public var title: String
     public var updated_at: String
     public var message_count: Int
+    public var workspace: String?
+
+    public init(id: String, title: String, updated_at: String, message_count: Int, workspace: String? = nil) {
+        self.id = id
+        self.title = title
+        self.updated_at = updated_at
+        self.message_count = message_count
+        self.workspace = workspace
+    }
 }
 
 public struct ProxyPresetItem: Identifiable, Codable, Hashable {

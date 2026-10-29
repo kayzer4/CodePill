@@ -23,6 +23,8 @@ pub struct ConversationSummary {
     pub title: String,
     pub updated_at: String,
     pub message_count: usize,
+    #[serde(default)]
+    pub workspace: Option<String>,
 }
 
 /// Attachment info

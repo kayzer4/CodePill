@@ -18,7 +18,8 @@ public struct SideConversationsDrawer: View {
 
         if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
             list = list.filter {
-                $0.title.localizedCaseInsensitiveContains(searchText)
+                $0.title.localizedCaseInsensitiveContains(searchText) ||
+                ($0.workspace?.localizedCaseInsensitiveContains(searchText) ?? false)
             }
         }
 
@@ -163,6 +164,16 @@ public struct SideConversationsDrawer: View {
                                             .lineLimit(1)
 
                                         HStack(spacing: 6) {
+                                            if let ws = item.workspace, !ws.isEmpty {
+                                                Text(ws)
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundStyle(Color.accentColor)
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 1.5)
+                                                    .background(Color.accentColor.opacity(0.12))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                            }
+
                                             Text("\(item.message_count) msgs")
                                                 .font(.system(size: 11))
                                                 .foregroundStyle(.secondary)
