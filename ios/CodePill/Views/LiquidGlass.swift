@@ -116,14 +116,32 @@ public struct LiquidAmbientBackground: View {
                 Color(UIColor.systemGroupedBackground)
                     .ignoresSafeArea()
             } else {
-                Color(UIColor.systemBackground)
-                    .ignoresSafeArea()
+                // Deep spatial midnight canvas (not flat pitch black)
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.08, green: 0.09, blue: 0.14),
+                        Color(red: 0.04, green: 0.05, blue: 0.08),
+                        Color(red: 0.06, green: 0.06, blue: 0.10)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
 
-                // Ultra-subtle ambient glow in the dark spatial canvas
+                // Top ambient purple/accent glow behind navigation and tool status
                 RadialGradient(
-                    colors: [Color.accentColor.opacity(0.04), Color.clear],
+                    colors: [Color.accentColor.opacity(0.18), Color.clear],
                     center: .top,
-                    startRadius: 50,
+                    startRadius: 30,
+                    endRadius: 380
+                )
+                .ignoresSafeArea()
+
+                // Bottom ambient cyan glow behind the input field
+                RadialGradient(
+                    colors: [Color.cyan.opacity(0.12), Color.clear],
+                    center: .bottomTrailing,
+                    startRadius: 40,
                     endRadius: 400
                 )
                 .ignoresSafeArea()

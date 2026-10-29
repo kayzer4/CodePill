@@ -39,277 +39,15 @@ public struct ContentView: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 NavigationStack {
-                VStack(spacing: 0) {
-                // Dynamic Island mirror preview when busy
-                if let island = viewModel.currentIslandState, island.isBusy {
-                    LiveIslandPreview(state: island)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if let tool = viewModel.latestToolCall {
-                                selectedToolDetail = tool
-                            } else {
-                                selectedToolDetail = ToolCallItem(
-                                    id: UUID().uuidString,
-                                    name: island.status,
-                                    summary: island.stepDescription,
-                                    output: island.currentFile,
-                                    fullOutput: island.currentFile,
-                                    parametersText: island.currentFile.map { "File: \($0)" },
-                                    isRunning: island.isBusy,
-                                    isSuccess: !island.isBusy,
-                                    duration: nil
-                                )
-                            }
-                            Haptics.shared.selection()
+                    chatStreamView(geometry: geometry)
+                        .safeAreaInset(edge: .top, spacing: 0) {
+                            topToolStatusInset
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.top, 4)
-                        .padding(.bottom, 2)
-                        .transition(.asymmetric(
-                            insertion: .scale(scale: 0.96, anchor: .top).combined(with: .opacity).combined(with: .move(edge: .top)),
-                            removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity).combined(with: .move(edge: .top))
-                        ))
-                }
-
-                // Chat stream with smart auto-scroll & floating bottom button
-                ScrollViewReader { proxy in
-                    ZStack(alignment: .bottomTrailing) {
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                // Кнопка "загрузить ещё" вверху списка
-                                if viewModel.canLoadMore {
-                                    Button {
-                                        viewModel.loadMoreMessages()
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            if viewModel.isLoadingMore {
-                                                ProgressView().scaleEffect(0.7)
-                                            } else {
-                                                Image(systemName: "arrow.up.circle")
-                                            }
-                                            Text(viewModel.isLoadingMore ? "Загрузка..." : "Загрузить ещё")
-                                                .font(.system(size: 13, weight: .medium))
-                                        }
-                                        .foregroundStyle(.secondary)
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 16)
-                                        .liquidGlass(cornerRadius: 14)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.top, 4)
-                                    .onAppear {
-                                        // Автоподгрузка при скролле к самому верху
-                                        viewModel.loadMoreMessages()
-                                    }
-                                }
-                                ForEach(viewModel.messages) { msg in
-                                    MessageRow(
-                                        message: msg,
-                                        onRollback: {
-                                            viewModel.rollbackTurn()
-                                        },
-                                        onEdit: { prompt in
-                                            viewModel.inputText = prompt
-                                        }
-                                    )
-                                    .id(msg.id)
-                                }
-
-                                // Dedicated bottom scroll anchor & viewport detector
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: ScrollBottomOffsetKey.self,
-                                        value: geo.frame(in: .named("chatScrollSpace")).maxY
-                                    )
-                                }
-                                .frame(height: 2)
-                                .id("chatBottomAnchor")
-                            }
-                            .padding(.vertical, 12)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            bottomInputInset
                         }
-                        .coordinateSpace(name: "chatScrollSpace")
-                        .onPreferenceChange(ScrollBottomOffsetKey.self) { bottomY in
-                            let viewportH = geometry.size.height
-                            guard viewportH > 0 else { return }
-                            let dist = bottomY - viewportH
-                            let atBottom = dist < 50
-                            if atBottom != isAtBottom {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isAtBottom = atBottom
-                                    if atBottom {
-                                        userScrolledUp = false
-                                    }
-                                }
-                            }
-                        }
-                        .refreshable {
-                            await viewModel.refreshCurrentSessionAsync()
-                        }
-                        .scrollDismissesKeyboard(.interactively)
-                        .onAppear {
-                            scrollToBottom(proxy: proxy, animated: false)
-                        }
-                        .onChange(of: viewModel.currentConversationId) { _ in
-                            hasInitialScrolled = false
-                            userScrolledUp = false
-                            isAtBottom = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                scrollToBottom(proxy: proxy, animated: false)
-                            }
-                        }
-                        .onChange(of: viewModel.isExecuting) { executing in
-                            if executing {
-                                userScrolledUp = false
-                                isAtBottom = true
-                                scrollToBottom(proxy: proxy, animated: true)
-                            }
-                        }
-                        .onChange(of: viewModel.messages.last?.text) { _ in
-                            if isAtBottom {
-                                proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
-                            }
-                        }
-                        .onChange(of: viewModel.messages.last?.toolCalls.count) { _ in
-                            if isAtBottom {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
-                                }
-                            }
-                        }
-                        .onChange(of: viewModel.messages.count) { newCount in
-                            if !hasInitialScrolled && newCount > 0 {
-                                hasInitialScrolled = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                    scrollToBottom(proxy: proxy, animated: false)
-                                }
-                            } else if isAtBottom {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
-                                }
-                            }
-                        }
-
-                        // Floating "Scroll to Bottom" Button (like ChatGPT & Telegram)
-                        if !isAtBottom {
-                            Button {
-                                isAtBottom = true
-                                userScrolledUp = false
-                                scrollToBottom(proxy: proxy, animated: true)
-                                Haptics.shared.impact(.light)
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.82))
-                                        .frame(width: 42, height: 42)
-                                        .overlay(
-                                            Circle()
-                                                .strokeBorder(
-                                                    LinearGradient(
-                                                        colors: [Color.white.opacity(0.35), Color.white.opacity(0.06)],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
-                                                    ),
-                                                    lineWidth: 1
-                                                )
-                                        )
-                                        .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
-
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundStyle(.primary)
-
-                                    if viewModel.isExecuting {
-                                        Circle()
-                                            .fill(Color.accentColor)
-                                            .frame(width: 9, height: 9)
-                                            .offset(x: 13, y: -13)
-                                            .shadow(color: Color.accentColor.opacity(0.8), radius: 4, x: 0, y: 0)
-                                    }
-                                }
-                            }
-                            .padding(.trailing, 16)
-                            .padding(.bottom, 12)
-                            .transition(.scale(scale: 0.8).combined(with: .opacity))
-                        }
-                    }
-                    .overlay(alignment: .top) {
-                        if viewModel.isSyncing {
-                            HStack(spacing: 7) {
-                                ProgressView()
-                                    .scaleEffect(0.65)
-                                    .tint(.cyan)
-                                Text("Синхронизация...")
-                                    .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(.cyan)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(
-                                Capsule()
-                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.92))
-                            )
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(Color.cyan.opacity(0.35), lineWidth: 0.8)
-                            )
-                            .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
-                            .padding(.top, 6)
-                            .transition(.asymmetric(
-                                insertion: .move(edge: .top).combined(with: .opacity),
-                                removal: .opacity
-                            ))
-                        }
-                    }
-                }
-
-                // Attachment preview strip above input
-                if !viewModel.attachments.isEmpty {
-                    AttachmentPreviewBar(attachments: viewModel.attachments) { id in
-                        viewModel.removeAttachment(id: id)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 6)
-                }
-
-                // File downloading indicator HUD
-                if viewModel.isDownloadingFile {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .scaleEffect(0.75)
-                        Text("Fetching file from server...")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.primary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .liquidGlass(cornerRadius: 16)
-                    .padding(.bottom, 6)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
-                }
-
-                if let err = viewModel.downloadError {
-                    Text(err)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(Color.red.opacity(0.85))
-                        .clipShape(Capsule())
-                        .padding(.bottom, 6)
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
-                                withAnimation { viewModel.downloadError = nil }
-                            }
-                        }
-                }
-
-                // Input Bar
-                strictInputBar
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 8)
-            }
-            .background(LiquidAmbientBackground())
-            .navigationBarTitleDisplayMode(.inline)
+                        .background(LiquidAmbientBackground())
+                        .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -578,6 +316,306 @@ public struct ContentView: View {
         }
     }
 
+    // MARK: - Subviews
+
+    @ViewBuilder
+    private var topToolStatusInset: some View {
+        if let island = viewModel.currentIslandState, island.isBusy {
+            LiveIslandPreview(state: island)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if let tool = viewModel.latestToolCall {
+                        selectedToolDetail = tool
+                    } else {
+                        selectedToolDetail = ToolCallItem(
+                            id: UUID().uuidString,
+                            name: island.status,
+                            summary: island.stepDescription,
+                            output: island.currentFile,
+                            fullOutput: island.currentFile,
+                            parametersText: island.currentFile.map { "File: \($0)" },
+                            isRunning: island.isBusy,
+                            isSuccess: !island.isBusy,
+                            duration: nil
+                        )
+                    }
+                    Haptics.shared.selection()
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 4)
+                .padding(.bottom, 6)
+                .background(
+                    Rectangle()
+                        .fill(.ultraThinMaterial.opacity(0.75))
+                        .overlay(
+                            Rectangle()
+                                .fill(Color.white.opacity(0.08))
+                                .frame(height: 0.5),
+                            alignment: .bottom
+                        )
+                )
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.96, anchor: .top).combined(with: .opacity).combined(with: .move(edge: .top)),
+                    removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity).combined(with: .move(edge: .top))
+                ))
+        }
+    }
+
+    @ViewBuilder
+    private var bottomInputInset: some View {
+        VStack(spacing: 0) {
+            // Attachment preview strip above input
+            if !viewModel.attachments.isEmpty {
+                AttachmentPreviewBar(attachments: viewModel.attachments) { id in
+                    viewModel.removeAttachment(id: id)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 6)
+            }
+
+            // File downloading indicator HUD
+            if viewModel.isDownloadingFile {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.75)
+                    Text("Fetching file from server...")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .liquidGlass(cornerRadius: 16)
+                .padding(.bottom, 6)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+
+            if let err = viewModel.downloadError {
+                Text(err)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(Color.red.opacity(0.85))
+                    .clipShape(Capsule())
+                    .padding(.bottom, 6)
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+                            withAnimation { viewModel.downloadError = nil }
+                        }
+                    }
+            }
+
+            // Input Bar
+            strictInputBar
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
+        }
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial.opacity(0.85))
+                .overlay(
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 0.5),
+                    alignment: .top
+                )
+                .ignoresSafeArea(edges: .bottom)
+        )
+    }
+
+    @ViewBuilder
+    private func chatStreamView(geometry: GeometryProxy) -> some View {
+        ScrollViewReader { proxy in
+            ZStack(alignment: .bottomTrailing) {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        // Кнопка "загрузить ещё" вверху списка
+                        if viewModel.canLoadMore {
+                            Button {
+                                viewModel.loadMoreMessages()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if viewModel.isLoadingMore {
+                                        ProgressView().scaleEffect(0.7)
+                                    } else {
+                                        Image(systemName: "arrow.up.circle")
+                                    }
+                                    Text(viewModel.isLoadingMore ? "Загрузка..." : "Загрузить ещё")
+                                        .font(.system(size: 13, weight: .medium))
+                                }
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .liquidGlass(cornerRadius: 14)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 4)
+                            .onAppear {
+                                viewModel.loadMoreMessages()
+                            }
+                        }
+                        ForEach(viewModel.messages) { msg in
+                            MessageRow(
+                                message: msg,
+                                onRollback: {
+                                    viewModel.rollbackTurn()
+                                },
+                                onEdit: { prompt in
+                                    viewModel.inputText = prompt
+                                }
+                            )
+                            .id(msg.id)
+                        }
+
+                        // Dedicated bottom scroll anchor & viewport detector
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: ScrollBottomOffsetKey.self,
+                                value: geo.frame(in: .named("chatScrollSpace")).maxY
+                            )
+                        }
+                        .frame(height: 2)
+                        .id("chatBottomAnchor")
+                    }
+                    .padding(.vertical, 12)
+                }
+                .coordinateSpace(name: "chatScrollSpace")
+                .onPreferenceChange(ScrollBottomOffsetKey.self) { bottomY in
+                    let viewportH = geometry.size.height
+                    guard viewportH > 0 else { return }
+                    let dist = bottomY - viewportH
+                    let atBottom = dist < 65
+                    if atBottom != isAtBottom {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isAtBottom = atBottom
+                            if atBottom {
+                                userScrolledUp = false
+                            }
+                        }
+                    }
+                }
+                .refreshable {
+                    await viewModel.refreshCurrentSessionAsync()
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .onAppear {
+                    scrollToBottom(proxy: proxy, animated: false)
+                }
+                .onChange(of: viewModel.currentConversationId) { _ in
+                    hasInitialScrolled = false
+                    userScrolledUp = false
+                    isAtBottom = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        scrollToBottom(proxy: proxy, animated: false)
+                    }
+                }
+                .onChange(of: viewModel.isExecuting) { executing in
+                    if executing {
+                        userScrolledUp = false
+                        isAtBottom = true
+                        scrollToBottom(proxy: proxy, animated: true)
+                    }
+                }
+                .onChange(of: viewModel.messages.last?.text) { _ in
+                    if isAtBottom {
+                        proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                    }
+                }
+                .onChange(of: viewModel.messages.last?.toolCalls.count) { _ in
+                    if isAtBottom {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                        }
+                    }
+                }
+                .onChange(of: viewModel.messages.count) { newCount in
+                    if !hasInitialScrolled && newCount > 0 {
+                        hasInitialScrolled = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            scrollToBottom(proxy: proxy, animated: false)
+                        }
+                    } else if isAtBottom {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            proxy.scrollTo("chatBottomAnchor", anchor: .bottom)
+                        }
+                    }
+                }
+
+                // Floating "Scroll to Bottom" Button
+                if !isAtBottom {
+                    Button {
+                        isAtBottom = true
+                        userScrolledUp = false
+                        scrollToBottom(proxy: proxy, animated: true)
+                        Haptics.shared.impact(.light)
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color(UIColor.secondarySystemBackground).opacity(0.82))
+                                .frame(width: 42, height: 42)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(
+                                            LinearGradient(
+                                                colors: [Color.white.opacity(0.35), Color.white.opacity(0.06)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ),
+                                            lineWidth: 1
+                                        )
+                                )
+                                .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
+
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.primary)
+
+                            if viewModel.isExecuting {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 9, height: 9)
+                                    .offset(x: 13, y: -13)
+                                    .shadow(color: Color.accentColor.opacity(0.8), radius: 4, x: 0, y: 0)
+                            }
+                        }
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 12)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: .top) {
+                if viewModel.isSyncing {
+                    HStack(spacing: 7) {
+                        ProgressView()
+                            .scaleEffect(0.65)
+                            .tint(.cyan)
+                        Text("Синхронизация...")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(.cyan)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(Color(UIColor.secondarySystemBackground).opacity(0.92))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.cyan.opacity(0.35), lineWidth: 0.8)
+                    )
+                    .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+                    .padding(.top, 6)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .opacity
+                    ))
+                }
+            }
+        }
+    }
+
     private var currentConversationTitle: String {
         if !viewModel.currentTitle.isEmpty && viewModel.currentTitle != "CodePill" {
             return viewModel.currentTitle
@@ -657,7 +695,14 @@ public struct ContentView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .liquidGlass(cornerRadius: 22, specularOpacity: 0.28)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color(UIColor.secondarySystemBackground).opacity(0.35))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
+        )
     }
 
     private func handleURLTap(_ url: URL) {
