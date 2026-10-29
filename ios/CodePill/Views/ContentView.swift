@@ -532,7 +532,8 @@ public struct ContentView: View {
         SideConversationsDrawer(
             viewModel: viewModel,
             isOpen: $showSideDrawer,
-            safeAreaLeading: safeLeading
+            safeAreaLeading: safeLeading,
+            safeAreaTop: geometry.safeAreaInsets.top
         )
         .frame(width: drawerWidth + safeLeading)
         .offset(x: currentX)
@@ -578,6 +579,9 @@ public struct ContentView: View {
     }
 
     private var currentConversationTitle: String {
+        if !viewModel.currentTitle.isEmpty && viewModel.currentTitle != "CodePill" {
+            return viewModel.currentTitle
+        }
         if let currentId = viewModel.currentConversationId,
            let conv = viewModel.conversations.first(where: { $0.id == currentId }) {
             return conv.title

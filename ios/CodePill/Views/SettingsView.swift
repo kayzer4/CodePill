@@ -9,7 +9,8 @@ public struct SettingsView: View {
     @State private var hostInput: String = ""
     @State private var portInput: String = ""
     @State private var accountInfo: AccountInfo?
-    @State private var usageText: String = ""
+    @State private var usageText: String = UserDefaults.standard.string(forKey: "codepill_cached_usage_text") ?? ""
+    @State private var isRefreshingQuotas: Bool = false
     @State private var availableModels: [ModelItem] = []
     @State private var proxyConfig: ProxyConfigResponse?
     @State private var proxyUrlInput: String = ""
@@ -146,97 +147,99 @@ public struct SettingsView: View {
                 }
 
                 Section("Лимиты и квоты (Antigravity)") {
-                    if !parsedQuotas.isEmpty {
-                        let families = Array(Set(parsedQuotas.map { $0.modelFamily })).sorted()
-                        ForEach(families, id: \.self) { family in
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: family.contains("Gemini") ? "sparkles" : "brain.head.profile")
-                                        .foregroundStyle(family.contains("Gemini") ? Color.cyan : Color.purple)
-                                        .font(.system(size: 14, weight: .bold))
+                    let quotas = activeQuotas
+                    let families = Array(Set(quotas.map { $0.modelFamily })).sorted()
+                    ForEach(families, id: \.self) { family in
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: family.contains("Gemini") ? "sparkles" : "brain.head.profile")
+                                    .foregroundStyle(family.contains("Gemini") ? Color.cyan : Color.purple)
+                                    .font(.system(size: 14, weight: .bold))
 
-                                    Text(family)
-                                        .font(.subheadline.bold())
-                                        .foregroundStyle(.primary)
-                                }
-                                .padding(.top, 4)
+                                Text(family)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(.top, 4)
 
-                                ForEach(parsedQuotas.filter { $0.modelFamily == family }) { item in
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack {
-                                            Text(item.periodName)
-                                                .font(.system(size: 13, weight: .medium))
-                                                .foregroundStyle(.secondary)
-
-                                            Spacer()
-
-                                            Text("\(item.percentage)%")
-                                                .font(.system(size: 12.5, weight: .bold, design: .monospaced))
-                                                .foregroundStyle(quotaColor(item.percentage))
-                                                .padding(.horizontal, 7)
-                                                .padding(.vertical, 2.5)
-                                                .background(quotaColor(item.percentage).opacity(0.12))
-                                                .clipShape(Capsule())
-                                        }
-
-                                        GeometryReader { geo in
-                                            ZStack(alignment: .leading) {
-                                                Capsule()
-                                                    .fill(Color(UIColor.tertiarySystemFill))
-                                                    .frame(height: 6)
-
-                                                Capsule()
-                                                    .fill(
-                                                        LinearGradient(
-                                                            colors: quotaGradient(item.percentage),
-                                                            startPoint: .leading,
-                                                            endPoint: .trailing
-                                                        )
-                                                    )
-                                                    .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(item.percentage) / 100.0)), height: 6)
-                                            }
-                                        }
-                                        .frame(height: 6)
-
-                                        if !item.resetFormatted.isEmpty {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "clock")
-                                                    .font(.system(size: 10))
-                                                Text(item.resetFormatted)
-                                                    .font(.system(size: 11))
-                                            }
+                            ForEach(quotas.filter { $0.modelFamily == family }) { item in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text(item.periodName)
+                                            .font(.system(size: 13, weight: .medium))
                                             .foregroundStyle(.secondary)
-                                            .padding(.top, 2)
+
+                                        Spacer()
+
+                                        Text("\(item.percentage)%")
+                                            .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(quotaColor(item.percentage))
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 2.5)
+                                            .background(quotaColor(item.percentage).opacity(0.12))
+                                            .clipShape(Capsule())
+                                    }
+
+                                    GeometryReader { geo in
+                                        ZStack(alignment: .leading) {
+                                            Capsule()
+                                                .fill(Color(UIColor.tertiarySystemFill))
+                                                .frame(height: 6)
+
+                                            Capsule()
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: quotaGradient(item.percentage),
+                                                        startPoint: .leading,
+                                                        endPoint: .trailing
+                                                    )
+                                                )
+                                                .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(item.percentage) / 100.0)), height: 6)
                                         }
                                     }
-                                    .padding(.vertical, 3)
-                                }
-                            }
-                            .padding(.vertical, 4)
-                        }
+                                    .frame(height: 6)
 
-                        Button {
-                            Task {
-                                usageText = (try? await client.fetchUsage()) ?? ""
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Обновить квоты")
-                                    .font(.subheadline)
+                                    if !item.resetFormatted.isEmpty {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "clock")
+                                                .font(.system(size: 10))
+                                            Text(item.resetFormatted)
+                                                .font(.system(size: 11))
+                                        }
+                                        .foregroundStyle(.secondary)
+                                        .padding(.top, 2)
+                                    }
+                                }
+                                .padding(.vertical, 3)
                             }
                         }
-                    } else if !usageText.isEmpty {
-                        Text(usageText)
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.secondary)
-                    } else {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                            Text("Загрузка данных квот...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        .padding(.vertical, 4)
+                    }
+
+                    Button {
+                        isRefreshingQuotas = true
+                        Task {
+                            let fresh = (try? await client.fetchUsage()) ?? ""
+                            await MainActor.run {
+                                if !fresh.isEmpty {
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                        usageText = fresh
+                                    }
+                                    UserDefaults.standard.set(fresh, forKey: "codepill_cached_usage_text")
+                                }
+                                isRefreshingQuotas = false
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isRefreshingQuotas {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            Text(isRefreshingQuotas ? "Обновление..." : "Обновить квоты")
+                                .font(.subheadline)
                         }
                     }
                 }
@@ -357,7 +360,12 @@ public struct SettingsView: View {
         isLoading = true
         accountInfo = try? await client.fetchAccount()
         availableModels = (try? await client.fetchModels()) ?? []
-        usageText = (try? await client.fetchUsage()) ?? ""
+        if let fresh = try? await client.fetchUsage(), !fresh.isEmpty {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                usageText = fresh
+            }
+            UserDefaults.standard.set(fresh, forKey: "codepill_cached_usage_text")
+        }
 
         if let p = try? await client.fetchProxy() {
             proxyConfig = p
@@ -375,6 +383,21 @@ public struct SettingsView: View {
         let rawPeriod: String
         let percentage: Int
         let resetFormatted: String
+    }
+
+    private var defaultPlaceholderQuotas: [QuotaLimitItem] {
+        [
+            QuotaLimitItem(modelFamily: "Gemini 3.8 Flash", periodName: "5-часовой лимит", rawPeriod: "", percentage: 100, resetFormatted: "Загрузка точных значений..."),
+            QuotaLimitItem(modelFamily: "Gemini 3.8 Flash", periodName: "Недельный лимит", rawPeriod: "", percentage: 100, resetFormatted: "Загрузка точных значений..."),
+            QuotaLimitItem(modelFamily: "Claude 3.7 Sonnet", periodName: "5-часовой лимит", rawPeriod: "", percentage: 100, resetFormatted: "Загрузка точных значений..."),
+            QuotaLimitItem(modelFamily: "Claude 3.7 Sonnet", periodName: "Недельный лимит", rawPeriod: "", percentage: 100, resetFormatted: "Загрузка точных значений..."),
+            QuotaLimitItem(modelFamily: "Gemini 3.1 Pro", periodName: "5-часовой лимит", rawPeriod: "", percentage: 100, resetFormatted: "Загрузка точных значений..."),
+        ]
+    }
+
+    private var activeQuotas: [QuotaLimitItem] {
+        let parsed = parsedQuotas
+        return parsed.isEmpty ? defaultPlaceholderQuotas : parsed
     }
 
     private var parsedQuotas: [QuotaLimitItem] {

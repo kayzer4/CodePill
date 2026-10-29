@@ -32,9 +32,9 @@ public struct LiquidGlassModifier: ViewModifier {
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .background(
                     ZStack {
-                        // Deep dark glass foundation
+                        // Translucent glass foundation
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color(UIColor.secondarySystemBackground).opacity(0.72))
+                            .fill(Color(UIColor.secondarySystemBackground).opacity(0.18))
 
                         // Ultra-thin system material for genuine glass blur
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)

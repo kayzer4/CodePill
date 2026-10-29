@@ -4,6 +4,7 @@ public struct SideConversationsDrawer: View {
     @ObservedObject public var viewModel: ChatViewModel
     @Binding public var isOpen: Bool
     public var safeAreaLeading: CGFloat = 0
+    public var safeAreaTop: CGFloat = 0
 
     @State private var searchText: String = ""
     @State private var sortNewestFirst: Bool = true
@@ -72,7 +73,7 @@ public struct SideConversationsDrawer: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 10) // Right below the status bar indicator icons
+                .padding(.top, max(16, safeAreaTop + 10)) // Safely below Dynamic Island, notch and status bar icons
 
                 // Search field
                 HStack(spacing: 8) {

@@ -75,9 +75,10 @@ public struct LiveIslandPreview: View {
         .padding(.vertical, 7)
         .background(
             ZStack {
-                Color.black.opacity(0.78)
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(toolThemeColor.opacity(0.08))
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

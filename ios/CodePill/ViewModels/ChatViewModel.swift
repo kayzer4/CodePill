@@ -14,6 +14,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     @Published public var currentIslandState: CodePillAttributes.ContentState?
     @Published public var selectedModel: String = "gemini-3.8-flash-medium"
     @Published public var currentConversationId: String? = nil
+    @Published public var currentTitle: String = "CodePill"
     @Published public var conversations: [ConversationItem] = []
     @Published public var isConnected: Bool = false
     @Published public var activeWebURL: URL? = nil
@@ -26,6 +27,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     private let pageSize: Int = 30                           // сколько показывать за раз
     private var displayedCount: Int = 30
     private var isExplicitNewChat: Bool = false
+    private var optimisticUserMessages: [String: [ChatMessage]] = [:] // строго по conversationId
 
     public let client: CodePillClient
     private var currentAssistantMessageId: UUID?
@@ -44,10 +46,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     }
 
     /// Установить полный список и показать только последние pageSize
-    private func applyMessages(_ newMessages: [ChatMessage]) {
+    private func applyMessages(_ newMessages: [ChatMessage], forConversationId targetConvId: String? = nil) {
         var merged = newMessages
 
-        // Map local existing IDs so we never break SwiftUI view identities
+        // Map local existing IDs within this same conversation so we never break SwiftUI view identities
         var idMap: [String: UUID] = [:]
         for m in allMessages {
             let key = "\(m.role.rawValue):\(m.text.prefix(80))"
@@ -71,13 +73,16 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
             return m
         }
 
-        // Сохраняем локальное отправленное сообщение пользователя, если сервер ещё не успел включить его в историю синхронизации
-        if let lastLocal = allMessages.last ?? messages.last, lastLocal.role == .user {
-            let alreadyHasIt = merged.contains(where: {
-                $0.id == lastLocal.id || ($0.role == .user && $0.text == lastLocal.text)
-            })
-            if !alreadyHasIt {
-                merged.append(lastLocal)
+        // Сохраняем локальные отправленные сообщения пользователя СТРОГО для текущего conversationId
+        let activeId = targetConvId ?? currentConversationId
+        if let activeId = activeId, let optimistics = optimisticUserMessages[activeId], !optimistics.isEmpty {
+            for opt in optimistics {
+                let alreadyHasIt = merged.contains(where: {
+                    $0.id == opt.id || ($0.role == .user && $0.text == opt.text)
+                })
+                if !alreadyHasIt {
+                    merged.append(opt)
+                }
             }
         }
 
@@ -123,8 +128,10 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func startNewChat() {
         self.isExplicitNewChat = true
-        self.currentConversationId = UUID().uuidString
-        self.client.activeConversationId = self.currentConversationId
+        let newId = UUID().uuidString
+        self.currentConversationId = newId
+        self.currentTitle = "Новый диалог"
+        self.client.activeConversationId = newId
         self.currentAssistantMessageId = nil
         self.allMessages = []
         self.messages = []
@@ -169,10 +176,13 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         if let savedConvId = UserDefaults.standard.string(forKey: "codepill_active_conv_id") {
             self.currentConversationId = savedConvId
             self.client.activeConversationId = savedConvId
+            if let conv = conversations.first(where: { $0.id == savedConvId }) {
+                self.currentTitle = conv.title
+            }
             let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(savedConvId).json")
             if let data = try? Data(contentsOf: messagesFile),
                let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
-                applyMessages(list)
+                applyMessages(list, forConversationId: savedConvId)
                 return
             }
         }
@@ -267,14 +277,21 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     public func selectConversation(_ item: ConversationItem) {
         self.isExplicitNewChat = false
         self.currentConversationId = item.id
-        client.activeConversationId = item.id
+        self.currentTitle = item.title
+        self.client.activeConversationId = item.id
         self.currentAssistantMessageId = nil
+        self.isExecuting = false
+        self.currentIslandState = nil
+        self.allMessages = []
+        self.messages = []
+        self.canLoadMore = false
+
         let messagesFile = getDocumentsDirectory().appendingPathComponent("cache_messages_\(item.id).json")
         if let data = try? Data(contentsOf: messagesFile),
            let list = try? JSONDecoder().decode([ChatMessage].self, from: data) {
-            applyMessages(list)
+            applyMessages(list, forConversationId: item.id)
         } else {
-            applyMessages([])
+            applyMessages([], forConversationId: item.id)
         }
         syncCurrentConversation()
         Haptics.shared.selection()
@@ -409,6 +426,9 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
         if let convId = currentConversationId {
             client.activeConversationId = convId
+            var list = optimisticUserMessages[convId] ?? []
+            list.append(userMsg)
+            optimisticUserMessages[convId] = list
         }
 
         client.sendPrompt(
@@ -565,6 +585,7 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
     }
 
     public func didFinishTurn(conversationId: String, success: Bool, summary: String?) {
+        optimisticUserMessages.removeValue(forKey: conversationId)
         if let current = currentConversationId, conversationId != current {
             client.requestConversationsList()
             return
@@ -594,32 +615,31 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
         self.currentConversationId = conversationId
         self.client.activeConversationId = conversationId
 
-        // Preserve optimistic user messages if sync arrives before server persisted it
-        var merged = messages
-        if isExecuting {
-            for localMsg in self.messages where localMsg.role == .user {
-                if !merged.contains(where: { $0.text == localMsg.text }) {
-                    merged.append(localMsg)
-                }
+        // If the server now includes our optimistic messages, clean them up
+        if var list = optimisticUserMessages[conversationId] {
+            list.removeAll(where: { opt in
+                messages.contains(where: { $0.text == opt.text && $0.role == .user })
+            })
+            if list.isEmpty {
+                optimisticUserMessages.removeValue(forKey: conversationId)
+            } else {
+                optimisticUserMessages[conversationId] = list
             }
         }
 
-        applyMessages(merged)
+        applyMessages(messages, forConversationId: conversationId)
 
-        // Protect isExecuting: do not let an in-flight stale sync turn off isExecuting
-        // unless the server actually reports isBusy=false AND we are not awaiting an assistant turn
-        if self.isExecuting {
-            let hasAssistantResponse = merged.last?.role == .assistant && !(merged.last?.text.isEmpty ?? true)
-            if isBusy {
-                self.isExecuting = true
-            } else if hasAssistantResponse {
-                self.isExecuting = false
-            }
+        self.isExecuting = isBusy
+        if isBusy {
+            self.currentIslandState = islandState
         } else {
-            self.isExecuting = isBusy
+            self.currentIslandState = nil
         }
 
-        self.currentIslandState = islandState
+        if let conv = conversations.first(where: { $0.id == conversationId }) {
+            self.currentTitle = conv.title
+        }
+
         saveCache()
 
         // Turn off isSyncing only after messages have been applied to state
@@ -645,6 +665,9 @@ public final class ChatViewModel: ObservableObject, CodePillClientDelegate {
 
     public func didReceiveConversationsList(_ list: [ConversationItem]) {
         self.conversations = list
+        if let currentId = currentConversationId, let conv = list.first(where: { $0.id == currentId }) {
+            self.currentTitle = conv.title
+        }
         saveCache()
     }
 
